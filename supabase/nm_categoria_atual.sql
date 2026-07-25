@@ -10,6 +10,10 @@ insert into nm_categoria_atual (id, categoria)
 values (1, null)
 on conflict (id) do nothing;
 
+-- RLS ligado e sem policies: ninguem le/escreve a tabela direto com a anon
+-- key, so pelas funcoes security definer abaixo.
+alter table nm_categoria_atual enable row level security;
+
 -- Leitura publica: usada na Home para exibir "Agora na Pista"
 create or replace function nm_get_categoria_atual()
 returns text

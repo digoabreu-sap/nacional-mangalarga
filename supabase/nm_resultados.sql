@@ -76,6 +76,10 @@ create table if not exists nm_resultados_sync (
 
 insert into nm_resultados_sync (id) values (1) on conflict (id) do nothing;
 
+-- RLS ligado e sem policies: ninguem le/escreve a tabela direto com a anon
+-- key, so pelas funcoes security definer abaixo.
+alter table nm_resultados_sync enable row level security;
+
 create or replace function nm_get_resultados_sync()
 returns table(ultima_sincronizacao timestamptz, classes_processadas int, linhas_atualizadas int, erro text)
 language sql
