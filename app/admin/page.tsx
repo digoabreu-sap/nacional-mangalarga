@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
 
 type Admin = { id: number; email: string; nome: string }
 type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number }
@@ -10,7 +11,11 @@ type DailyView = { dia: string; total: number }
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null)
   const [admin, setAdmin] = useState<Admin | null>(null)
-  const [tab, setTab] = useState<'banners' | 'analytics' | 'admins' | 'leads' | 'categoria' | 'resultados'>('analytics')
+  const [tab, setTab] = useState<'banners' | 'analytics' | 'admins' | 'leads' | 'categoria' | 'resultados' | 'video'>('analytics')
+
+  useEffect(() => {
+    document.title = `Admin - Nacional MM (${formatVersionComDataHora()})`
+  }, [])
 
   useEffect(() => {
     const t = localStorage.getItem('nm_admin_token')
@@ -39,18 +44,21 @@ export default function AdminPage() {
             <h1 className="text-lg font-bold">Admin - Nacional MM</h1>
             <p className="text-xs text-[var(--text-muted)]">Ola, {admin.nome}</p>
           </div>
-          <button
-            onClick={() => { localStorage.removeItem('nm_admin_token'); localStorage.removeItem('nm_admin_user'); setToken(null); setAdmin(null) }}
-            className="text-xs text-red-400 hover:text-red-300"
-          >
-            Sair
-          </button>
+          <div className="text-right">
+            <button
+              onClick={() => { localStorage.removeItem('nm_admin_token'); localStorage.removeItem('nm_admin_user'); setToken(null); setAdmin(null) }}
+              className="text-xs text-red-400 hover:text-red-300"
+            >
+              Sair
+            </button>
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">{formatVersionComDataHora()}</p>
+          </div>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-4">
         <div className="flex gap-2 mb-6 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-          {(['analytics', 'leads', 'categoria', 'resultados', 'banners', 'admins'] as const).map(t => (
+          {(['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'admins'] as const).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -66,6 +74,7 @@ export default function AdminPage() {
         {tab === 'analytics' && <AnalyticsPanel token={token} />}
         {tab === 'leads' && <LeadsPanel token={token} />}
         {tab === 'categoria' && <CategoriaPanel token={token} />}
+        {tab === 'video' && <VideoPanel token={token} />}
         {tab === 'resultados' && <ResultadosPanel token={token} />}
         {tab === 'banners' && <BannersPanel token={token} />}
         {tab === 'admins' && <AdminsPanel token={token} />}
@@ -204,6 +213,124 @@ function LeadsPanel({ token }: { token: string }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+function VideoPanel({ token }: { token: string }) {
+  const [ativo, setAtivo] = useState(false)
+  const [fonteTipo, setFonteTipo] = useState<'video' | 'canal'>('canal')
+  const [fonteValor, setFonteValor] = useState('')
+  const [embedAtual, setEmbedAtual] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    const res = await fetch('/api/admin/video', { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    if (data) {
+      setAtivo(data.ativo || false)
+      setFonteTipo(data.fonte_tipo || 'canal')
+      setFonteValor(data.fonte_valor || '')
+      setEmbedAtual(data.embed_url || null)
+    }
+    setLoading(false)
+  }, [token])
+
+  useEffect(() => { load() }, [load])
+
+  async function save(novoAtivo: boolean) {
+    setSaving(true)
+    setMsg('')
+    const res = await fetch('/api/admin/video', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ativo: novoAtivo, fonte_tipo: fonteTipo, fonte_valor: fonteValor }),
+    })
+    const data = await res.json()
+    setSaving(false)
+    if (!res.ok) { setMsg(data.error || 'Erro ao salvar'); return }
+    setAtivo(novoAtivo)
+    setEmbedAtual(data.embed_url)
+    setMsg('Salvo!')
+    setTimeout(() => setMsg(''), 3000)
+  }
+
+  if (loading) return <div className="text-center py-8"><div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+
+  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] appearance-none"
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Video ao Vivo (Home)</h3>
+      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
+        <p className="text-xs text-[var(--text-muted)]">
+          Status: <span className={ativo ? 'text-green-400 font-semibold' : 'text-[var(--text-primary)]'}>{ativo ? 'Ativo (aparece na Home)' : 'Desativado'}</span>
+        </p>
+
+        <div className="flex gap-1 bg-[var(--bg-primary)] rounded-lg p-0.5">
+          {(['canal', 'video'] as const).map(t => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setFonteTipo(t)}
+              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                fonteTipo === t ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]'
+              }`}
+            >
+              {t === 'canal' ? 'Sempre o que estiver ao vivo no canal' : 'Video/live especifico'}
+            </button>
+          ))}
+        </div>
+
+        {fonteTipo === 'canal' ? (
+          <div>
+            <input
+              placeholder="Channel ID do @abccmmoficial (comeca com UC...)"
+              value={fonteValor}
+              onChange={e => setFonteValor(e.target.value)}
+              className={inputClass}
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">
+              Nao e o @abccmmoficial nem o link do canal - precisa do Channel ID (ex: UCxxxxxxxxxxxxxxxxxxxxxxxx).
+              Acha em &quot;Sobre&quot; do canal no YouTube ou no YouTube Studio &gt; Configuracoes &gt; Canal &gt; Avancado.
+              Assim que configurado, o player mostra sozinho sempre a live atual do canal (ou &quot;offline&quot; quando nao tem nenhuma).
+            </p>
+          </div>
+        ) : (
+          <div>
+            <input
+              placeholder="Link do video/live do YouTube (ou so o ID)"
+              value={fonteValor}
+              onChange={e => setFonteValor(e.target.value)}
+              className={inputClass}
+            />
+            <p className="text-[10px] text-[var(--text-muted)] mt-1">Aceita link completo (youtube.com/watch?v=..., youtu.be/..., .../live/...) ou so o ID do video.</p>
+          </div>
+        )}
+
+        {embedAtual && (
+          <p className="text-[10px] text-[var(--text-muted)] break-all">Embed atual: {embedAtual}</p>
+        )}
+
+        {msg && <p className={`text-sm ${msg === 'Salvo!' ? 'text-green-400' : 'text-red-400'}`}>{msg}</p>}
+
+        <div className="flex gap-2">
+          <button onClick={() => save(true)} disabled={saving || !fonteValor.trim()} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+            {saving ? 'Salvando...' : 'Salvar e Ativar'}
+          </button>
+          {ativo && (
+            <button onClick={() => save(false)} disabled={saving} className="px-4 py-2 bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-secondary)] rounded-lg text-sm font-semibold disabled:opacity-50">
+              Desativar
+            </button>
+          )}
+        </div>
+
+        <p className="text-[10px] text-[var(--text-muted)] pt-2 border-t border-[var(--border)]">
+          Isso liga/desliga globalmente pra todo mundo. Cada visitante ainda pode esconder o video pra si mesmo (ou trocar a posicao na tela) sem afetar os outros.
+        </p>
+      </div>
     </div>
   )
 }

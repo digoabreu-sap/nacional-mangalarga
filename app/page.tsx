@@ -6,6 +6,7 @@ import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
 import Banner from '@/components/Banner'
 import BottomNav from '@/components/BottomNav'
+import VideoAoVivo from '@/components/VideoAoVivo'
 import { trackAnimalClick } from '@/components/Analytics'
 
 const MARCHAS = [
@@ -35,12 +36,18 @@ function HomeContent() {
   const searchParams = useSearchParams()
   const campeonatoParam = searchParams.get('campeonato')
 
+  // Modo padrao: trava na categoria "em pista" configurada no admin, sem
+  // filtro editavel - evita o usuario ficar mexendo em filtro toda hora.
+  // A busca livre (com filtros de marcha/categoria) so aparece quando o
+  // usuario aciona o icone de busca (ou chega aqui via link de campeonato).
+  const [searchMode, setSearchMode] = useState(() => !!campeonatoParam)
+
   const [search, setSearch] = useState('')
-  const [marcha, setMarcha] = useState<string>(() => (typeof window !== 'undefined' && sessionStorage.getItem('nm_filtro_marcha')) || 'Todas')
-  const [categoria, setCategoria] = useState<string>(() => (typeof window !== 'undefined' && sessionStorage.getItem('nm_filtro_categoria')) || 'Todas')
+  const [marcha, setMarcha] = useState<string>('Todas')
+  const [categoria, setCategoria] = useState<string>('Todas')
   const [categoriaAtual, setCategoriaAtual] = useState<string | null>(null)
   const [marchaAtual, setMarchaAtual] = useState<string | null>(null)
-  const [defaultCategoriaReady, setDefaultCategoriaReady] = useState(false)
+  const [categoriaAtualCarregada, setCategoriaAtualCarregada] = useState(false)
   const [categorias, setCategorias] = useState<string[]>([])
   const [criadores, setCriadores] = useState<string[]>([])
   const [expositores, setExpositores] = useState<string[]>([])
@@ -84,37 +91,41 @@ function HomeContent() {
       if (!error && atual?.categoria) {
         setCategoriaAtual(atual.categoria)
         setMarchaAtual(atual.tipo_marcha || null)
-        // O pre-filtro so e aplicado se o usuario ainda nao tem nenhum filtro
-        // salvo nesta sessao do navegador (nem escolhido a mao, nem aplicado
-        // automaticamente antes) - depois disso ele persiste entre navegacoes
-        // (voltar de um animal, por exemplo) e so muda quando o usuario troca
-        // a categoria/marcha manualmente ou pesquisa.
-        const jaTemFiltro = sessionStorage.getItem('nm_filtro_categoria') || sessionStorage.getItem('nm_filtro_marcha')
-        if (!jaTemFiltro) {
-          setCategoria(atual.categoria)
-          sessionStorage.setItem('nm_filtro_categoria', atual.categoria)
-          if (atual.tipo_marcha) {
-            setMarcha(atual.tipo_marcha)
-            sessionStorage.setItem('nm_filtro_marcha', atual.tipo_marcha)
-          }
-        }
+      } else {
+        // Sem categoria configurada no admin - nao ha o que travar, cai pra
+        // busca livre no catalogo inteiro.
+        setSearchMode(true)
       }
-      setDefaultCategoriaReady(true)
+      setCategoriaAtualCarregada(true)
     }
     loadCategoriaAtual()
   }, [])
 
-  // Persiste a escolha de categoria/marcha entre navegacoes (voltar da pagina
-  // do animal nao deve resetar o filtro pra "Todas").
+  // Enquanto travado na pista, a categoria/marcha do filtro sempre acompanha
+  // a "categoria em pista" atual - o usuario nao escolhe.
   useEffect(() => {
-    if (categoria === 'Todas') sessionStorage.removeItem('nm_filtro_categoria')
-    else sessionStorage.setItem('nm_filtro_categoria', categoria)
-  }, [categoria])
+    if (!searchMode && categoriaAtual) {
+      setCategoria(categoriaAtual)
+      setMarcha(marchaAtual || 'Todas')
+    }
+  }, [searchMode, categoriaAtual, marchaAtual])
 
-  useEffect(() => {
-    if (marcha === 'Todas') sessionStorage.removeItem('nm_filtro_marcha')
-    else sessionStorage.setItem('nm_filtro_marcha', marcha)
-  }, [marcha])
+  function abrirBusca() {
+    setSearchMode(true)
+    setSearch('')
+    setActiveFilter(null)
+    setCategoria('Todas')
+    setMarcha('Todas')
+  }
+
+  function fecharBusca() {
+    setSearchMode(false)
+    setSearch('')
+    setActiveFilter(null)
+    setShowSuggestions(false)
+    setCampeonatoFilter(null)
+    // categoria/marcha voltam pra "em pista" sozinhas pelo efeito acima.
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -187,7 +198,7 @@ function HomeContent() {
   }, [search, marcha, categoria, campeonatoFilter, activeFilter])
 
   useEffect(() => {
-    if (!defaultCategoriaReady) return
+    if (!categoriaAtualCarregada) return
     setPage(0)
     setAnimals([])
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -195,7 +206,7 @@ function HomeContent() {
       fetchAnimals(0, true)
     }, 300)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, defaultCategoriaReady])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada])
 
   useEffect(() => {
     if (!sentinelRef.current || !hasMore) return
@@ -240,105 +251,140 @@ function HomeContent() {
               <h1 className="text-base font-bold leading-tight">43ª Nacional</h1>
               <p className="text-xs text-[var(--text-muted)]">Mangalarga Marchador</p>
             </div>
-            <div className="ml-auto text-right">
-              <p className="text-2xl font-bold text-[var(--accent)] leading-none">{total.toLocaleString()}</p>
-              <p className="text-[10px] text-[var(--text-muted)] uppercase">animais</p>
+            <div className="ml-auto flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-2xl font-bold text-[var(--accent)] leading-none">{total.toLocaleString()}</p>
+                <p className="text-[10px] text-[var(--text-muted)] uppercase">animais</p>
+              </div>
+              {!searchMode ? (
+                <button
+                  onClick={abrirBusca}
+                  aria-label="Buscar"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 transition-colors flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </button>
+              ) : categoriaAtual && (
+                <button
+                  onClick={fecharBusca}
+                  aria-label="Voltar pra pista atual"
+                  className="w-9 h-9 flex items-center justify-center rounded-lg bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--accent)] hover:border-[var(--accent)]/40 transition-colors flex-shrink-0"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
 
           <Banner posicao="topo" />
 
-          {campeonatoFilter && (
-            <div className="flex items-center gap-2 mb-3 bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-lg px-3 py-2">
-              <span className="text-xs text-[var(--accent)] flex-1 truncate">{campeonatoFilter}</span>
-              <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text-primary)] flex-shrink-0">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </Link>
+          {!searchMode && categoriaAtual && (
+            <div className="mb-1 bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-xl px-4 py-3 text-center">
+              <p className="text-[10px] text-[var(--accent)] uppercase tracking-wide font-semibold">Agora na Pista</p>
+              <p className="text-base font-bold text-[var(--text-primary)] mt-0.5">
+                {categoriaAtual}{marchaAtual && <span className="text-[var(--accent)]"> · {marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}</span>}
+              </p>
             </div>
           )}
 
-          {/* Search with autocomplete */}
-          <div className="relative mb-3" ref={searchRef}>
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Buscar animal, haras, criador, expositor..."
-              value={search}
-              onChange={e => {
-                const value = e.target.value
-                setSearch(value)
-                setActiveFilter(null)
-                setShowSuggestions(true)
-                if (value.trim()) { setCategoria('Todas'); setMarcha('Todas') }
-              }}
-              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
-              className="w-full pl-10 pr-10 py-2.5 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
-            />
-            {(search || activeFilter) && (
-              <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            )}
+          {searchMode && (
+            <>
+              {campeonatoFilter && (
+                <div className="flex items-center gap-2 mb-3 bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-lg px-3 py-2">
+                  <span className="text-xs text-[var(--accent)] flex-1 truncate">{campeonatoFilter}</span>
+                  <button onClick={() => setCampeonatoFilter(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] flex-shrink-0">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+              )}
 
-            {/* Active filter badge */}
-            {activeFilter && (
-              <div className="absolute left-10 top-1/2 -translate-y-1/2 pointer-events-none">
-                <span className={`text-[9px] font-bold uppercase ${typeColor[activeFilter.type as keyof typeof typeColor]}`}>
-                  {typeLabel[activeFilter.type as keyof typeof typeLabel]}:
-                </span>
-              </div>
-            )}
+              {/* Search with autocomplete */}
+              <div className="relative mb-3" ref={searchRef}>
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Buscar animal, haras, criador, expositor..."
+                  value={search}
+                  onChange={e => {
+                    const value = e.target.value
+                    setSearch(value)
+                    setActiveFilter(null)
+                    setShowSuggestions(true)
+                  }}
+                  onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+                  className="w-full pl-10 pr-10 py-2.5 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
+                />
+                {(search || activeFilter) && (
+                  <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
 
-            {/* Suggestions dropdown */}
-            {showSuggestions && suggestions.length > 0 && !activeFilter && (
-              <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden shadow-2xl z-50">
-                {suggestions.map((s, i) => (
-                  <button
-                    key={`${s.type}-${s.value}-${i}`}
-                    onClick={() => selectSuggestion(s)}
-                    className="w-full px-4 py-2.5 text-left hover:bg-[var(--bg-card-hover)] transition-colors flex items-center gap-3 border-b border-[var(--border)] last:border-0"
-                  >
-                    <span className={`text-[9px] font-bold uppercase w-16 flex-shrink-0 ${typeColor[s.type]}`}>
-                      {typeLabel[s.type]}
+                {/* Active filter badge */}
+                {activeFilter && (
+                  <div className="absolute left-10 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <span className={`text-[9px] font-bold uppercase ${typeColor[activeFilter.type as keyof typeof typeColor]}`}>
+                      {typeLabel[activeFilter.type as keyof typeof typeLabel]}:
                     </span>
-                    <span className="text-sm truncate">{s.label}</span>
-                  </button>
-                ))}
+                  </div>
+                )}
+
+                {/* Suggestions dropdown */}
+                {showSuggestions && suggestions.length > 0 && !activeFilter && (
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl overflow-hidden shadow-2xl z-50">
+                    {suggestions.map((s, i) => (
+                      <button
+                        key={`${s.type}-${s.value}-${i}`}
+                        onClick={() => selectSuggestion(s)}
+                        className="w-full px-4 py-2.5 text-left hover:bg-[var(--bg-card-hover)] transition-colors flex items-center gap-3 border-b border-[var(--border)] last:border-0"
+                      >
+                        <span className={`text-[9px] font-bold uppercase w-16 flex-shrink-0 ${typeColor[s.type]}`}>
+                          {typeLabel[s.type]}
+                        </span>
+                        <span className="text-sm truncate">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="space-y-2">
-            {/* Row 1: Marcha + Filtros toggle */}
-            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-              <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5 flex-shrink-0">
-                {MARCHAS.map(m => (
-                  <button
-                    key={m.value}
-                    onClick={() => setMarcha(m.value)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                      marcha === m.value
-                        ? m.value === 'MB' ? 'bg-[var(--mb-color)] text-white' : m.value === 'MP' ? 'bg-[var(--mp-color)] text-white' : 'bg-[var(--accent)] text-white'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+              <div className="space-y-2">
+                {/* Row 1: Marcha + Filtros toggle */}
+                <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                  <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5 flex-shrink-0">
+                    {MARCHAS.map(m => (
+                      <button
+                        key={m.value}
+                        onClick={() => setMarcha(m.value)}
+                        className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                          marcha === m.value
+                            ? m.value === 'MB' ? 'bg-[var(--mb-color)] text-white' : m.value === 'MP' ? 'bg-[var(--mp-color)] text-white' : 'bg-[var(--accent)] text-white'
+                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                        }`}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Categoria always visible */}
+                <select value={categoria} onChange={e => setCategoria(e.target.value)}
+                  className="w-full py-2 px-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors appearance-none"
+                  style={selectStyle}>
+                  <option value="Todas">Todas as categorias</option>
+                  {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
               </div>
-            </div>
-
-            {/* Categoria always visible */}
-            <select value={categoria} onChange={e => setCategoria(e.target.value)}
-              className="w-full py-2 px-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors appearance-none"
-              style={selectStyle}>
-              <option value="Todas">Todas as categorias</option>
-              {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-
-          </div>
+            </>
+          )}
         </div>
       </header>
 
@@ -355,11 +401,6 @@ function HomeContent() {
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[var(--text-primary)]">Programacao de Julgamentos</p>
             <p className="text-[10px] text-[var(--text-muted)]">18/07 a 01/08 · Confira o calendario completo</p>
-            {categoriaAtual && (
-              <p className="text-[11px] font-semibold text-[var(--accent)] mt-0.5 truncate">
-                Agora na Pista: {categoriaAtual}{marchaAtual && ` (${marchaAtual === 'MP' ? 'M. Picada' : 'M. Batida'})`}
-              </p>
-            )}
           </div>
           <svg className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -452,6 +493,7 @@ function HomeContent() {
 
       <BottomNav />
       <Banner posicao="nav_rodape" />
+      {!searchMode && <VideoAoVivo />}
     </main>
   )
 }
