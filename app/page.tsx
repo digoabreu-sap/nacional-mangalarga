@@ -1,8 +1,9 @@
 'use client'
 
 import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase, Animal } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
 import Banner from '@/components/Banner'
 import BottomNav from '@/components/BottomNav'
@@ -15,6 +16,8 @@ const MARCHAS = [
   { value: 'MP', label: 'M. Picada' },
 ]
 const PER_PAGE = 30
+const CACHE_KEY = 'nm_cache_pista'
+const PENDENTES_KEY = 'nm_votos_pendentes'
 
 const selectStyle = {
   backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
@@ -23,6 +26,14 @@ const selectStyle = {
 }
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
+type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
+
+function lerVotosPendentes(): VotoPendente[] {
+  try { return JSON.parse(localStorage.getItem(PENDENTES_KEY) || '[]') } catch { return [] }
+}
+function salvarVotosPendentes(v: VotoPendente[]) {
+  try { localStorage.setItem(PENDENTES_KEY, JSON.stringify(v)) } catch { /* localStorage indisponivel */ }
+}
 
 export default function Home() {
   return (
@@ -34,6 +45,8 @@ export default function Home() {
 
 function HomeContent() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const { user } = useAuth()
   const campeonatoParam = searchParams.get('campeonato')
 
   // Modo padrao: trava na categoria "em pista" configurada no admin, sem
@@ -48,15 +61,30 @@ function HomeContent() {
   const [categoriaAtual, setCategoriaAtual] = useState<string | null>(null)
   const [marchaAtual, setMarchaAtual] = useState<string | null>(null)
   const [categoriaAtualCarregada, setCategoriaAtualCarregada] = useState(false)
+  const [categoriaToast, setCategoriaToast] = useState<string | null>(null)
+  const categoriaRef = useRef<{ categoria: string | null; marcha: string | null }>({ categoria: null, marcha: null })
   const [categorias, setCategorias] = useState<string[]>([])
   const [criadores, setCriadores] = useState<string[]>([])
   const [expositores, setExpositores] = useState<string[]>([])
   const [harasList, setHarasList] = useState<string[]>([])
   const [campeonatoFilter, setCampeonatoFilter] = useState<string | null>(campeonatoParam)
   const [votosPorAnimal, setVotosPorAnimal] = useState<Record<number, number>>({})
-  const [animals, setAnimals] = useState<Animal[]>([])
+  const [meuVotoPorCampeonato, setMeuVotoPorCampeonato] = useState<Record<string, number | null>>({})
+  const [animals, setAnimals] = useState<Animal[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
+      return cache?.animals || []
+    } catch { return [] }
+  })
+  const [total, setTotal] = useState(() => {
+    if (typeof window === 'undefined') return 0
+    try {
+      const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
+      return cache?.total || 0
+    } catch { return 0 }
+  })
   const [loading, setLoading] = useState(false)
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -85,22 +113,41 @@ function HomeContent() {
     loadFilters()
   }, [])
 
-  useEffect(() => {
-    async function loadCategoriaAtual() {
-      const { data, error } = await supabase.rpc('nm_get_categoria_atual')
-      const atual = Array.isArray(data) ? data[0] : data
-      if (!error && atual?.categoria) {
-        setCategoriaAtual(atual.categoria)
-        setMarchaAtual(atual.tipo_marcha || null)
-      } else {
-        // Sem categoria configurada no admin - nao ha o que travar, cai pra
-        // busca livre no catalogo inteiro.
-        setSearchMode(true)
+  // Busca a categoria em pista; se `avisar` for true e o valor mudou desde a
+  // ultima vez, mostra um toast (usado quando o admin troca a categoria com
+  // a pagina ja aberta - detectado via realtime abaixo).
+  const carregarCategoriaAtual = useCallback(async (avisar: boolean) => {
+    const { data, error } = await supabase.rpc('nm_get_categoria_atual')
+    const atual = Array.isArray(data) ? data[0] : data
+    if (!error && atual?.categoria) {
+      const mudou = avisar && (categoriaRef.current.categoria !== atual.categoria || categoriaRef.current.marcha !== atual.tipo_marcha)
+      categoriaRef.current = { categoria: atual.categoria, marcha: atual.tipo_marcha || null }
+      setCategoriaAtual(atual.categoria)
+      setMarchaAtual(atual.tipo_marcha || null)
+      if (mudou) {
+        const label = `Agora na pista: ${atual.categoria}${atual.tipo_marcha ? ` · ${atual.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}`
+        setCategoriaToast(label)
+        setTimeout(() => setCategoriaToast(null), 6000)
       }
-      setCategoriaAtualCarregada(true)
+    } else {
+      categoriaRef.current = { categoria: null, marcha: null }
+      // Sem categoria configurada no admin - nao ha o que travar, cai pra
+      // busca livre no catalogo inteiro.
+      setSearchMode(true)
     }
-    loadCategoriaAtual()
+    setCategoriaAtualCarregada(true)
   }, [])
+
+  useEffect(() => {
+    carregarCategoriaAtual(false)
+
+    const canal = supabase
+      .channel('categoria-atual-mudancas')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'nm_categoria_atual' }, () => carregarCategoriaAtual(true))
+      .subscribe()
+
+    return () => { supabase.removeChannel(canal) }
+  }, [carregarCategoriaAtual])
 
   // Enquanto travado na pista, a categoria/marcha do filtro sempre acompanha
   // a "categoria em pista" atual - o usuario nao escolhe.
@@ -147,6 +194,43 @@ function HomeContent() {
     }
   }, [searchMode, categoriaAtual, marchaAtual])
 
+  // Meu voto em cada campeonato presente na lista atual (pra saber qual
+  // coracao pintar de vermelho).
+  useEffect(() => {
+    if (searchMode || !user || animals.length === 0) { setMeuVotoPorCampeonato({}); return }
+    const campeonatosUnicos = [...new Set(animals.map(a => a.campeonato).filter(Boolean))]
+    let cancelado = false
+    Promise.all(campeonatosUnicos.map(async camp => {
+      const { data } = await supabase.rpc('nm_meu_voto', { p_usuario_id: user.id, p_campeonato: camp })
+      return [camp, data && data.length > 0 ? data[0].animal_id : null] as const
+    })).then(entries => {
+      if (cancelado) return
+      setMeuVotoPorCampeonato(Object.fromEntries(entries))
+    })
+    return () => { cancelado = true }
+  }, [searchMode, user, animals])
+
+  // Tenta de novo votos que falharam por falta de rede, assim que a conexao volta.
+  useEffect(() => {
+    async function flush() {
+      const pendentes = lerVotosPendentes()
+      if (pendentes.length === 0) return
+      const restantes: VotoPendente[] = []
+      for (const p of pendentes) {
+        try {
+          const { error } = await supabase.rpc('nm_toggle_voto', { p_usuario_id: p.usuarioId, p_animal_id: p.animalId, p_campeonato: p.campeonato })
+          if (error) restantes.push(p)
+        } catch {
+          restantes.push(p)
+        }
+      }
+      salvarVotosPendentes(restantes)
+    }
+    flush()
+    window.addEventListener('online', flush)
+    return () => window.removeEventListener('online', flush)
+  }, [])
+
   const liderId = useMemo(() => {
     let melhorId: number | null = null
     let melhorTotal = 0
@@ -155,6 +239,39 @@ function HomeContent() {
     }
     return melhorTotal > 0 ? melhorId : null
   }, [votosPorAnimal])
+
+  // Voto direto no card, sem abrir a pagina do animal. Otimista: atualiza a
+  // tela na hora, e so guarda pra tentar de novo depois se a rede falhar -
+  // pensado pro sinal ruim de parque de exposicao.
+  async function votarInline(animal: Animal, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!user) { router.push('/login'); return }
+    if (!animal.campeonato) return
+
+    const campeonato = animal.campeonato
+    const votoAnterior = meuVotoPorCampeonato[campeonato] ?? null
+    const novoVoto = votoAnterior === animal.id ? null : animal.id
+
+    setMeuVotoPorCampeonato(prev => ({ ...prev, [campeonato]: novoVoto }))
+    setVotosPorAnimal(prev => {
+      const next = { ...prev }
+      if (votoAnterior != null) next[votoAnterior] = Math.max(0, (next[votoAnterior] || 0) - 1)
+      if (novoVoto != null) next[novoVoto] = (next[novoVoto] || 0) + 1
+      return next
+    })
+
+    try {
+      const { error } = await supabase.rpc('nm_toggle_voto', {
+        p_usuario_id: user.id,
+        p_animal_id: animal.id,
+        p_campeonato: campeonato,
+      })
+      if (error) throw error
+    } catch {
+      salvarVotosPendentes([...lerVotosPendentes(), { usuarioId: user.id, animalId: animal.id, campeonato }])
+    }
+  }
 
   function abrirBusca() {
     setSearchMode(true)
@@ -206,6 +323,7 @@ function HomeContent() {
     setLoading(true)
     const from = pageNum * PER_PAGE
     const to = from + PER_PAGE - 1
+    const modoPista = !searchMode
 
     let query = supabase
       .from('nm_animais')
@@ -239,20 +357,30 @@ function HomeContent() {
       }
       setTotal(count ?? 0)
       setHasMore(data.length === PER_PAGE)
+      // So guarda cache da visao "em pista" (pagina 1) - e o cenario de
+      // sinal ruim no parque que queremos amenizar.
+      if (modoPista && reset) {
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ animals: data, total: count ?? 0 })) } catch { /* ignora */ }
+      }
     }
+    // Em erro de rede (comum no parque com sinal fraco): nao apaga a lista
+    // que ja estava na tela, deixa o que tinha (cache ou fetch anterior).
     setLoading(false)
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, searchMode])
 
   useEffect(() => {
     if (!categoriaAtualCarregada) return
     setPage(0)
-    setAnimals([])
+    // So limpa a lista visivel na busca livre - na visao travada da pista,
+    // mantem o que tiver na tela (cache ou carga anterior) ate o fetch novo
+    // responder, em vez de piscar pra vazio a cada troca de categoria.
+    if (searchMode) setAnimals([])
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       fetchAnimals(0, true)
     }, 300)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada, searchMode])
 
   useEffect(() => {
     if (!sentinelRef.current || !hasMore) return
@@ -286,6 +414,12 @@ function HomeContent() {
 
   return (
     <main className="flex flex-col min-h-screen">
+      {categoriaToast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] max-w-[90vw] bg-[var(--text-primary)] text-[var(--bg-primary)] text-xs font-semibold px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+          <span className="w-1.5 h-1.5 bg-[var(--accent)] rounded-full animate-pulse flex-shrink-0" />
+          <span className="truncate">{categoriaToast}</span>
+        </div>
+      )}
       <Banner posicao="header_topo" />
       <header className="sticky top-0 z-50 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-b border-[var(--border)] px-4 pt-4 pb-3">
         <div className="max-w-2xl mx-auto">
@@ -479,6 +613,7 @@ function HomeContent() {
           {animals.map(animal => {
             const votos = votosPorAnimal[animal.id] || 0
             const ehLider = !searchMode && animal.id === liderId
+            const jaVotei = !searchMode && animal.campeonato != null && meuVotoPorCampeonato[animal.campeonato] === animal.id
             return (
             <Link
               key={animal.id}
@@ -506,24 +641,28 @@ function HomeContent() {
                         🏆 Favorito da Torcida
                       </span>
                     )}
-                    {!ehLider && votos > 0 && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/5 text-[var(--text-secondary)] flex items-center gap-1">
-                        ♥ {votos}
-                      </span>
-                    )}
                   </div>
                   <h3 className="text-sm font-semibold truncate">{animal.nome}</h3>
                   <p className="text-xs text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
                 </div>
-                <div className="text-right flex-shrink-0">
+                <div className="text-right flex-shrink-0 flex flex-col items-end gap-1.5">
                   {animal.num_catalogo && (
-                    <>
+                    <div>
                       <p className="text-[10px] text-[var(--text-muted)] uppercase">Catalogo</p>
                       <p className="text-2xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
-                    </>
+                    </div>
                   )}
-                  {ehLider && (
-                    <p className="text-[10px] text-[var(--accent)] font-bold mt-1">♥ {votos} votos</p>
+                  {!searchMode && (
+                    <button
+                      onClick={e => votarInline(animal, e)}
+                      aria-label={jaVotei ? 'Remover meu voto' : 'Votar neste animal'}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all active:scale-90 ${
+                        jaVotei ? 'bg-[var(--accent)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                      }`}
+                    >
+                      <span>{jaVotei ? '♥' : '♡'}</span>
+                      {votos > 0 && <span>{votos}</span>}
+                    </button>
                   )}
                 </div>
               </div>
@@ -538,7 +677,7 @@ function HomeContent() {
           })}
         </div>
 
-        {loading && (
+        {loading && animals.length === 0 && (
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
           </div>

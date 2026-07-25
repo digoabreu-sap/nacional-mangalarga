@@ -8,21 +8,44 @@ import Link from 'next/link'
 const MEDAL_IMGS = ['/medals/medal_1.png', '/medals/medal_2.png', '/medals/medal_3.png']
 
 type RankingItem = { id: number; nome: string; registro: string; haras: string; num_catalogo: number; total_votos: number }
+type ResultadoOficial = { nome_animal: string | null; colocacao: string | null }
 
 export default function VotingPanel({ animalId, campeonato }: { animalId: number; campeonato: string }) {
   const { user } = useAuth()
   const [ranking, setRanking] = useState<RankingItem[]>([])
   const [myVote, setMyVote] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [resultadoOficial, setResultadoOficial] = useState<ResultadoOficial | null>(null)
 
   useEffect(() => {
     loadRanking()
     if (user) loadMyVote()
+    loadResultadoOficial()
   }, [campeonato, user])
 
   async function loadRanking() {
     const { data } = await supabase.rpc('nm_ranking_simples', { p_campeonato: campeonato })
     setRanking(data || [])
+  }
+
+  // Compara o favorito da torcida com o campeao oficial, quando o resultado
+  // ja saiu. campeonato vem como "TipoCampeonato - Marcha - Categoria".
+  async function loadResultadoOficial() {
+    const partes = campeonato.split(' - ')
+    if (partes.length < 3) { setResultadoOficial(null); return }
+    const [tipoCampeonato, tipoMarcha, ...resto] = partes
+    const categoriaNome = resto.join(' - ')
+    const { data } = await supabase
+      .from('nm_resultados')
+      .select('nome_animal, colocacao')
+      .eq('tipo_campeonato', tipoCampeonato)
+      .eq('tipo_marcha', tipoMarcha)
+      .eq('categoria', categoriaNome)
+      .eq('tipo_prova', 'final')
+      .ilike('colocacao', '%Campe%')
+      .not('colocacao', 'ilike', '%Reserv%')
+      .limit(1)
+    setResultadoOficial(data && data.length > 0 ? data[0] : null)
   }
 
   async function loadMyVote() {
@@ -115,6 +138,21 @@ export default function VotingPanel({ animalId, campeonato }: { animalId: number
                 </Link>
               ))}
             </div>
+          </div>
+        )}
+
+        {resultadoOficial && (
+          <div className="mt-4 pt-4 border-t border-[var(--border)] text-center">
+            <h4 className="text-[10px] text-[var(--accent)] uppercase tracking-wide font-semibold mb-2">Resultado Oficial</h4>
+            <p className="text-sm font-bold">{resultadoOficial.nome_animal}</p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{resultadoOficial.colocacao}</p>
+            {ranking.length > 0 && (
+              <p className="text-xs font-semibold mt-2 text-[var(--accent)]">
+                {ranking[0].nome === resultadoOficial.nome_animal
+                  ? '🎉 A torcida acertou o campeão!'
+                  : `A torcida tinha elegido ${ranking[0].nome} como favorito.`}
+              </p>
+            )}
           </div>
         )}
       </div>
