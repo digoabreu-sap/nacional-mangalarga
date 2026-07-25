@@ -27,7 +27,7 @@
 -- dos admins (aqui usa pgcrypto/bcrypt).
 -- =============================================================================
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 -- -----------------------------------------------------------------------
 -- nm_animais — catalogo de animais da exposicao
@@ -339,7 +339,7 @@ grant execute on function nm_login_simples(text, text, text) to anon, authentica
 -- Admin: autenticacao e CRUD de admins ------------------------------------------
 create or replace function nm_admin_login(p_email text, p_password text)
 returns table(id bigint, email text, nome text)
-language sql security definer set search_path = public
+language sql security definer set search_path = public, extensions
 as $$
   select id, email, nome from nm_admins
   where email = p_email and password_hash = crypt(p_password, password_hash);
@@ -354,7 +354,7 @@ grant execute on function nm_admin_list_admins() to anon, authenticated;
 
 create or replace function nm_add_admin(p_email text, p_password text, p_nome text)
 returns void
-language sql security definer set search_path = public
+language sql security definer set search_path = public, extensions
 as $$
   insert into nm_admins (email, password_hash, nome)
   values (p_email, crypt(p_password, gen_salt('bf')), p_nome);
