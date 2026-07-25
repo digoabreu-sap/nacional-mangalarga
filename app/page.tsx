@@ -53,6 +53,7 @@ function HomeContent() {
   const [expositores, setExpositores] = useState<string[]>([])
   const [harasList, setHarasList] = useState<string[]>([])
   const [campeonatoFilter, setCampeonatoFilter] = useState<string | null>(campeonatoParam)
+  const [votosPorAnimal, setVotosPorAnimal] = useState<Record<number, number>>({})
   const [animals, setAnimals] = useState<Animal[]>([])
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
@@ -109,6 +110,51 @@ function HomeContent() {
       setMarcha(marchaAtual || 'Todas')
     }
   }, [searchMode, categoriaAtual, marchaAtual])
+
+  // Votos da categoria em pista, mostrados na lista da Home. Busca de novo
+  // (em vez de tentar remendar o estado local) sempre que alguem vota -
+  // mais simples e evita contagem errada, e o volume de votos por
+  // categoria e pequeno o suficiente pra isso ser barato.
+  useEffect(() => {
+    if (searchMode || !categoriaAtual) {
+      setVotosPorAnimal({})
+      return
+    }
+
+    let cancelado = false
+    async function carregarVotos() {
+      const { data } = await supabase.rpc('nm_votos_por_categoria', {
+        p_categoria: categoriaAtual,
+        p_tipo_marcha: marchaAtual,
+      })
+      if (cancelado || !data) return
+      const mapa: Record<number, number> = {}
+      for (const row of data as { animal_id: number; total_votos: number }[]) {
+        mapa[row.animal_id] = Number(row.total_votos)
+      }
+      setVotosPorAnimal(mapa)
+    }
+    carregarVotos()
+
+    const canal = supabase
+      .channel(`votos-pista-${categoriaAtual}-${marchaAtual}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'nm_votos' }, carregarVotos)
+      .subscribe()
+
+    return () => {
+      cancelado = true
+      supabase.removeChannel(canal)
+    }
+  }, [searchMode, categoriaAtual, marchaAtual])
+
+  const liderId = useMemo(() => {
+    let melhorId: number | null = null
+    let melhorTotal = 0
+    for (const [idStr, total] of Object.entries(votosPorAnimal)) {
+      if (total > melhorTotal) { melhorTotal = total; melhorId = Number(idStr) }
+    }
+    return melhorTotal > 0 ? melhorId : null
+  }, [votosPorAnimal])
 
   function abrirBusca() {
     setSearchMode(true)
@@ -430,12 +476,17 @@ function HomeContent() {
 
       <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full">
         <div className="space-y-2">
-          {animals.map(animal => (
+          {animals.map(animal => {
+            const votos = votosPorAnimal[animal.id] || 0
+            const ehLider = !searchMode && animal.id === liderId
+            return (
             <Link
               key={animal.id}
               href={`/animal/${animal.num_catalogo || animal.id}`}
               onClick={() => trackAnimalClick(animal.id)}
-              className="block bg-[var(--bg-card)] rounded-xl p-3 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-all active:scale-[0.98]"
+              className={`block bg-[var(--bg-card)] rounded-xl p-3 border transition-all active:scale-[0.98] ${
+                ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
@@ -450,16 +501,31 @@ function HomeContent() {
                         Excl. Marcha
                       </span>
                     )}
+                    {ehLider && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent)] text-white flex items-center gap-1">
+                        🏆 Favorito da Torcida
+                      </span>
+                    )}
+                    {!ehLider && votos > 0 && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-black/5 text-[var(--text-secondary)] flex items-center gap-1">
+                        ♥ {votos}
+                      </span>
+                    )}
                   </div>
                   <h3 className="text-sm font-semibold truncate">{animal.nome}</h3>
                   <p className="text-xs text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
                 </div>
-                {animal.num_catalogo && (
-                  <div className="text-right flex-shrink-0">
-                    <p className="text-[10px] text-[var(--text-muted)] uppercase">Catalogo</p>
-                    <p className="text-2xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
-                  </div>
-                )}
+                <div className="text-right flex-shrink-0">
+                  {animal.num_catalogo && (
+                    <>
+                      <p className="text-[10px] text-[var(--text-muted)] uppercase">Catalogo</p>
+                      <p className="text-2xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
+                    </>
+                  )}
+                  {ehLider && (
+                    <p className="text-[10px] text-[var(--accent)] font-bold mt-1">♥ {votos} votos</p>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-3 mt-2 text-[10px] text-[var(--text-muted)]">
                 <span className="font-mono">Reg. {animal.registro}</span>
@@ -468,7 +534,8 @@ function HomeContent() {
                 <span className="truncate">Mae: {animal.mae || '—'}</span>
               </div>
             </Link>
-          ))}
+            )
+          })}
         </div>
 
         {loading && (
