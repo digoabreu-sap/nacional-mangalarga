@@ -138,11 +138,20 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
   const html = await res.text()
   const $ = cheerio.load(html)
 
+  // A pagina de Resultado Final tem uma tabela "mGrid" vazia (placeholder de
+  // layout, id contem "tblMarchadorIdeal") ANTES da tabela de verdade
+  // (id contem "grvDetalhe") - sem exigir linha de dados aqui, ".first()"
+  // pegava a vazia e a prova de final ficava sem nenhum resultado salvo.
   const tabela = $('table')
     .filter((_, el) => {
-      const id = $(el).attr('id') || ''
-      const cls = $(el).attr('class') || ''
-      return id.includes('grv') || cls.includes('mGrid')
+      const $el = $(el)
+      const id = $el.attr('id') || ''
+      const cls = $el.attr('class') || ''
+      if (!(id.includes('grv') || cls.includes('mGrid'))) return false
+      return $el.find('tr').toArray().some(tr => {
+        const $tr = $(tr)
+        return $tr.find('th').length === 0 && $tr.find('td').length >= 4
+      })
     })
     .first()
 
