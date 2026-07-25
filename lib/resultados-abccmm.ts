@@ -48,10 +48,26 @@ function describeFetchError(e: unknown): string {
 }
 
 const FETCH_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; NacionalMMBot/1.0)' }
-const FETCH_TIMEOUT_MS = 20000
+const FETCH_TIMEOUT_MS = 30000
+const FETCH_RETRIES = 2
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+// resultados.abccmm.org.br e um site pequeno/lento e falha bastante sob
+// concorrencia (timeouts intermitentes) - tenta de novo antes de desistir.
 async function fetchComTimeout(url: string): Promise<Response> {
-  return fetch(url, { headers: FETCH_HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+  let ultimoErro: unknown
+  for (let tentativa = 0; tentativa <= FETCH_RETRIES; tentativa++) {
+    try {
+      return await fetch(url, { headers: FETCH_HEADERS, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+    } catch (e) {
+      ultimoErro = e
+      if (tentativa < FETCH_RETRIES) await sleep(1000 * (tentativa + 1))
+    }
+  }
+  throw ultimoErro
 }
 
 // Busca o indice de categorias/marcha/campeonato e os links das 4 provas de cada uma.
@@ -190,7 +206,7 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
   const linhas: Record<string, unknown>[] = []
   const tarefas = classes.flatMap(classe => TIPOS_PROVA.map(tipo => ({ classe, tipo })))
 
-  await withConcurrency(tarefas, 5, async ({ classe, tipo }) => {
+  await withConcurrency(tarefas, 3, async ({ classe, tipo }) => {
     try {
       const resultado = await fetchResultTable(classe.urls[tipo])
       for (const linha of resultado) {

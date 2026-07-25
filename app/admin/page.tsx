@@ -347,7 +347,7 @@ function ResultadosPanel({ token }: { token: string }) {
           <div className="text-xs pt-2 border-t border-[var(--border)]">
             <p className="text-green-400">{ultimoResumo.classesProcessadas} categorias processadas, {ultimoResumo.linhasAtualizadas} resultados salvos.</p>
             {ultimoResumo.erros.length > 0 && (
-              <p className="text-red-400 mt-1">{ultimoResumo.erros.length} erro(s): {ultimoResumo.erros.slice(0, 3).join(' | ')}</p>
+              <p className="text-red-400 mt-1">{ultimoResumo.erros.length} erro(s): {ultimoResumo.erros.slice(0, 12).join(' | ')}</p>
             )}
           </div>
         )}

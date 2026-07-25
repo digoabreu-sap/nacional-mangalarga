@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   await supabase.rpc('nm_admin_set_resultados_sync', {
     p_classes: resumo.classesProcessadas,
     p_linhas: resumo.linhasAtualizadas,
-    p_erro: resumo.erros.length ? resumo.erros.slice(0, 10).join(' | ') : null,
+    p_erro: resumo.erros.length ? resumo.erros.slice(0, 30).join(' | ') : null,
   })
 
   return NextResponse.json(resumo)

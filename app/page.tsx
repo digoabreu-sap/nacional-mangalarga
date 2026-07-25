@@ -36,8 +36,8 @@ function HomeContent() {
   const campeonatoParam = searchParams.get('campeonato')
 
   const [search, setSearch] = useState('')
-  const [marcha, setMarcha] = useState<string>('Todas')
-  const [categoria, setCategoria] = useState<string>('Todas')
+  const [marcha, setMarcha] = useState<string>(() => (typeof window !== 'undefined' && sessionStorage.getItem('nm_filtro_marcha')) || 'Todas')
+  const [categoria, setCategoria] = useState<string>(() => (typeof window !== 'undefined' && sessionStorage.getItem('nm_filtro_categoria')) || 'Todas')
   const [categoriaAtual, setCategoriaAtual] = useState<string | null>(null)
   const [marchaAtual, setMarchaAtual] = useState<string | null>(null)
   const [defaultCategoriaReady, setDefaultCategoriaReady] = useState(false)
@@ -81,25 +81,40 @@ function HomeContent() {
     async function loadCategoriaAtual() {
       const { data, error } = await supabase.rpc('nm_get_categoria_atual')
       const atual = Array.isArray(data) ? data[0] : data
-      // O pre-filtro so deve valer no primeiro acesso do usuario ao app nesta
-      // sessao do navegador; depois disso a navegacao/filtros ficam livres,
-      // mesmo que o usuario volte pra Home.
-      const jaAplicado = sessionStorage.getItem('nm_prefiltro_aplicado')
-      if (!jaAplicado && !error && atual?.categoria) {
+      if (!error && atual?.categoria) {
         setCategoriaAtual(atual.categoria)
         setMarchaAtual(atual.tipo_marcha || null)
-        setCategoria(prev => prev === 'Todas' ? atual.categoria : prev)
-        if (atual.tipo_marcha) setMarcha(prev => prev === 'Todas' ? atual.tipo_marcha : prev)
-      } else if (!error && atual?.categoria) {
-        // Ainda mostra "Agora na Pista" no card, so nao mexe nos filtros.
-        setCategoriaAtual(atual.categoria)
-        setMarchaAtual(atual.tipo_marcha || null)
+        // O pre-filtro so e aplicado se o usuario ainda nao tem nenhum filtro
+        // salvo nesta sessao do navegador (nem escolhido a mao, nem aplicado
+        // automaticamente antes) - depois disso ele persiste entre navegacoes
+        // (voltar de um animal, por exemplo) e so muda quando o usuario troca
+        // a categoria/marcha manualmente ou pesquisa.
+        const jaTemFiltro = sessionStorage.getItem('nm_filtro_categoria') || sessionStorage.getItem('nm_filtro_marcha')
+        if (!jaTemFiltro) {
+          setCategoria(atual.categoria)
+          sessionStorage.setItem('nm_filtro_categoria', atual.categoria)
+          if (atual.tipo_marcha) {
+            setMarcha(atual.tipo_marcha)
+            sessionStorage.setItem('nm_filtro_marcha', atual.tipo_marcha)
+          }
+        }
       }
-      sessionStorage.setItem('nm_prefiltro_aplicado', '1')
       setDefaultCategoriaReady(true)
     }
     loadCategoriaAtual()
   }, [])
+
+  // Persiste a escolha de categoria/marcha entre navegacoes (voltar da pagina
+  // do animal nao deve resetar o filtro pra "Todas").
+  useEffect(() => {
+    if (categoria === 'Todas') sessionStorage.removeItem('nm_filtro_categoria')
+    else sessionStorage.setItem('nm_filtro_categoria', categoria)
+  }, [categoria])
+
+  useEffect(() => {
+    if (marcha === 'Todas') sessionStorage.removeItem('nm_filtro_marcha')
+    else sessionStorage.setItem('nm_filtro_marcha', marcha)
+  }, [marcha])
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -199,6 +214,8 @@ function HomeContent() {
     setActiveFilter({ type: s.type, value: s.value })
     setSearch(s.label)
     setShowSuggestions(false)
+    setCategoria('Todas')
+    setMarcha('Todas')
   }
 
   function clearSearch() {
@@ -249,7 +266,13 @@ function HomeContent() {
               type="text"
               placeholder="Buscar animal, haras, criador, expositor..."
               value={search}
-              onChange={e => { setSearch(e.target.value); setActiveFilter(null); setShowSuggestions(true) }}
+              onChange={e => {
+                const value = e.target.value
+                setSearch(value)
+                setActiveFilter(null)
+                setShowSuggestions(true)
+                if (value.trim()) { setCategoria('Todas'); setMarcha('Todas') }
+              }}
               onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
               className="w-full pl-10 pr-10 py-2.5 bg-[var(--bg-card)] border border-[var(--border)] rounded-xl text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)] transition-colors"
             />
