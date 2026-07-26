@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
-import { SCHEDULE, getEventType, getMarchaType, isToday, isPast } from '@/lib/calendario'
+import { supabase, Campeonato } from '@/lib/supabase'
+import { SCHEDULE, getEventType, getMarchaType, isToday, isPast, findCampeonatoParaEvento } from '@/lib/calendario'
 
 export default function CalendarioPage() {
+  const router = useRouter()
   const [filter, setFilter] = useState<'todos' | 'MB' | 'MP'>('todos')
+  const [campeonatos, setCampeonatos] = useState<Campeonato[]>([])
   const [expandedDay, setExpandedDay] = useState<string | null>(() => {
     const today = SCHEDULE.find(s => isToday(s.date))
     return today?.date || null
@@ -14,6 +18,12 @@ export default function CalendarioPage() {
   const destaqueRef = useRef<HTMLDivElement>(null)
 
   const nextIdx = SCHEDULE.findIndex(s => !isPast(s.date))
+
+  // Pra deixar cada prova do calendario clicavel, levando pro catalogo
+  // filtrado daquela categoria.
+  useEffect(() => {
+    supabase.from('nm_campeonatos').select('*').then(({ data }) => setCampeonatos(data || []))
+  }, [])
 
   // Ao abrir a pagina, leva direto pro dia de hoje (ou o proximo, se hoje
   // estiver fora do periodo da expo) - sem isso o usuario tinha que rolar
@@ -117,8 +127,15 @@ export default function CalendarioPage() {
                   {filteredEvents.map((evt, i) => {
                     const type = getEventType(evt)
                     const mt = getMarchaType(evt)
+                    const nomeCampeonato = campeonatos.length > 0 ? findCampeonatoParaEvento(evt, campeonatos) : null
                     return (
-                      <div key={i} className="flex items-start gap-2.5 px-3 py-2 border-b border-[var(--border)] last:border-b-0">
+                      <div
+                        key={i}
+                        onClick={nomeCampeonato ? () => router.push(`/?campeonato=${encodeURIComponent(nomeCampeonato)}`) : undefined}
+                        className={`flex items-start gap-2.5 px-3 py-2 border-b border-[var(--border)] last:border-b-0 ${
+                          nomeCampeonato ? 'cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors' : ''
+                        }`}
+                      >
                         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
                           type === 'especial' ? 'bg-[var(--accent-dark)]' :
                           type === 'morfologia' ? 'bg-[var(--text-primary)]' :
@@ -127,7 +144,7 @@ export default function CalendarioPage() {
                           'bg-[var(--text-muted)]'
                         }`} />
                         <div className="min-w-0 flex-1">
-                          <p className={`text-xs ${type === 'especial' ? 'font-bold text-[var(--accent-dark)]' : ''}`}>{evt}</p>
+                          <p className={`text-xs ${type === 'especial' ? 'font-bold text-[var(--accent-dark)]' : ''} ${nomeCampeonato ? 'text-[var(--accent)] underline decoration-dotted underline-offset-2' : ''}`}>{evt}</p>
                         </div>
                         {mt && (
                           <span className={`text-[9px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${

@@ -54,6 +54,10 @@ function HomeContent() {
   // A busca livre (com filtros de marcha/categoria) so aparece quando o
   // usuario aciona o icone de busca (ou chega aqui via link de campeonato).
   const [searchMode, setSearchMode] = useState(() => !!campeonatoParam)
+  // So foca (e abre o teclado no celular) quando o usuario clicou de
+  // proposito no icone de busca - chegar aqui por um link de campeonato
+  // (calendario/campeonatos) nao deve abrir o teclado sozinho.
+  const [autoFocusBusca, setAutoFocusBusca] = useState(false)
 
   const [search, setSearch] = useState('')
   const [marcha, setMarcha] = useState<string>('Todas')
@@ -291,6 +295,7 @@ function HomeContent() {
 
   function abrirBusca() {
     setSearchMode(true)
+    setAutoFocusBusca(true)
     setSearch('')
     setActiveFilter(null)
     setCategoria('Todas')
@@ -303,6 +308,7 @@ function HomeContent() {
 
   function fecharBusca() {
     setSearchMode(false)
+    setAutoFocusBusca(false)
     setSearch('')
     setActiveFilter(null)
     setShowSuggestions(false)
@@ -518,7 +524,7 @@ function HomeContent() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
-                  autoFocus
+                  autoFocus={autoFocusBusca}
                   type="text"
                   placeholder="Buscar animal, haras, criador, expositor..."
                   value={search}
