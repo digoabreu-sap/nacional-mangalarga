@@ -3,9 +3,12 @@ import { supabase } from '@/lib/supabase'
 
 const BASE_URL = 'https://resultados.abccmm.org.br/'
 
-export type TipoProva = 'marcha' | 'morfologia' | 'funcional' | 'final'
-
-const TIPOS_PROVA: TipoProva[] = ['marcha', 'morfologia', 'funcional', 'final']
+// Antes raspava 4 paginas por categoria (Marcha/Morfologia/Funcional/Final).
+// A pagina "Final" (DetalheFinal.aspx) ja traz tudo isso numa unica tabela
+// (colunas Nº/Competidor/Funcional/Morfologia/Andamento/Classificação),
+// entao so ela e buscada agora - 1 request por categoria em vez de ate 4,
+// o que ataca direto tanto a demora da sincronizacao quanto a falta de
+// dado nas provas que raramente tinham link proprio na pagina indice.
 
 export type ClasseResultado = {
   tipoCampeonato: string
@@ -14,17 +17,16 @@ export type ClasseResultado = {
   categoriaAbccmm: number
   campeonatoAbccmm: number
   eventoAbccmm: number
-  // Nem toda categoria tem as 4 provas (ex: potros nao tem prova funcional) -
-  // ausente aqui, em vez de apontar pra URL errada (a home do site, se o
-  // href da coluna estiver vazio).
-  urls: Partial<Record<TipoProva, string>>
+  urlFinal: string
 }
 
 export type LinhaResultado = {
   numCatalogo: string
   nomeAnimal: string
   idAnimalAbccmm: number | null
-  pontuacao: string | null
+  pontuacaoFuncional: string | null
+  pontuacaoMorfologia: string | null
+  pontuacaoAndamento: string | null
   colocacao: string | null
 }
 
@@ -51,11 +53,6 @@ function describeFetchError(e: unknown): string {
 }
 
 const FETCH_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; NacionalMMBot/1.0)' }
-// 30s por tentativa deixava o pior caso por tarefa (timeout + 2 retries)
-// passar de 1min e meio - com ~200+ categorias x 4 provas, isso sozinho ja
-// come boa parte (ou tudo) do tempo disponivel da funcao antes de terminar
-// de processar o catalogo inteiro. Reduzido pra girar o pool de concorrencia
-// mais rapido; o site costuma responder bem antes disso quando esta de pe.
 const FETCH_TIMEOUT_MS = 15000
 const FETCH_RETRIES = 2
 
@@ -78,7 +75,9 @@ async function fetchComTimeout(url: string): Promise<Response> {
   throw ultimoErro
 }
 
-// Busca o indice de categorias/marcha/campeonato e os links das 4 provas de cada uma.
+// Busca o indice de categorias/marcha/campeonato e o link da pagina Final de
+// cada uma (5a coluna da tabela indice - as 3 primeiras sao Marcha/
+// Morfologia/Funcional isoladas, que nao usamos mais).
 export async function fetchClasses(): Promise<ClasseResultado[]> {
   let res: Response
   try {
@@ -103,15 +102,12 @@ export async function fetchClasses(): Promise<ClasseResultado[]> {
     const categoria = resto.join(' - ').trim()
     if ((tipoMarcha !== 'MB' && tipoMarcha !== 'MP') || !categoria) return
 
-    const marchaHref = $(cells[1]).find('a').attr('href') || ''
-    const morfologiaHref = $(cells[2]).find('a').attr('href') || ''
-    const funcionalHref = $(cells[3]).find('a').attr('href') || ''
     const finalHref = $(cells[4]).find('a').attr('href') || ''
-    if (!marchaHref) return
+    if (!finalHref) return
 
-    const categoriaAbccmm = parseQueryParam(marchaHref, 'categoria')
-    const campeonatoAbccmm = parseQueryParam(marchaHref, 'campeonato')
-    const eventoAbccmm = parseQueryParam(marchaHref, 'evento')
+    const categoriaAbccmm = parseQueryParam(finalHref, 'categoria')
+    const campeonatoAbccmm = parseQueryParam(finalHref, 'campeonato')
+    const eventoAbccmm = parseQueryParam(finalHref, 'evento')
     if (categoriaAbccmm == null || campeonatoAbccmm == null || eventoAbccmm == null) return
 
     classes.push({
@@ -121,20 +117,24 @@ export async function fetchClasses(): Promise<ClasseResultado[]> {
       categoriaAbccmm,
       campeonatoAbccmm,
       eventoAbccmm,
-      urls: {
-        marcha: new URL(marchaHref, BASE_URL).toString(),
-        ...(morfologiaHref ? { morfologia: new URL(morfologiaHref, BASE_URL).toString() } : {}),
-        ...(funcionalHref ? { funcional: new URL(funcionalHref, BASE_URL).toString() } : {}),
-        ...(finalHref ? { final: new URL(finalHref, BASE_URL).toString() } : {}),
-      },
+      urlFinal: new URL(finalHref, BASE_URL).toString(),
     })
   })
 
   return classes
 }
 
-// Busca uma tabela de resultado (Andamento/Morfologia/Funcional/Final). Uma
-// categoria ainda nao julgada simplesmente retorna uma tabela vazia.
+// Nomes de coluna variam pouco (acentuacao, "Nº" vs "N"), entao casa por
+// prefixo normalizado em vez de igualdade exata.
+function normalizarCabecalho(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+
+// Busca a tabela de Resultado Final de uma categoria. Le os indices das
+// colunas pelo cabecalho (em vez de posicao fixa) porque categorias
+// castrado/exclusivamente-marcha nao tem prova de Funcional/Morfologia e
+// a tabela vem com menos colunas. Uma categoria ainda nao julgada
+// simplesmente retorna uma tabela vazia.
 export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
   let res: Response
   try {
@@ -146,14 +146,10 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
   const html = await res.text()
   const $ = cheerio.load(html)
 
-  // A pagina de Resultado Final tem uma tabela "mGrid" vazia (placeholder de
-  // layout, id contem "tblMarchadorIdeal") ANTES da tabela de verdade
-  // (id contem "grvDetalhe") - sem exigir linha de dados aqui, ".first()"
-  // pegava a vazia e a prova de final ficava sem nenhum resultado salvo.
-  // Colunas variam por prova: Final tem 6 (N, Competidor, Funcional,
-  // Morfologia, Andamento, Classificacao), mas Morfologia/Funcional isolados
-  // podem ter so 3 (N, Competidor, Pontuacao) - exigir 4 aqui descartava
-  // essas provas inteiras.
+  // A pagina tem uma tabela "mGrid" vazia (placeholder de layout, id contem
+  // "tblMarchadorIdeal") ANTES da tabela de verdade (id contem "grvDetalhe")
+  // - sem exigir linha de dados aqui, ".first()" pegava a vazia e a
+  // categoria ficava sem nenhum resultado salvo.
   const tabela = $('table')
     .filter((_, el) => {
       const $el = $(el)
@@ -169,6 +165,16 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
 
   const linhas: LinhaResultado[] = []
   if (tabela.length === 0) return linhas
+
+  const colIndex: Record<string, number> = {}
+  const headerRow = tabela.find('tr').filter((_, tr) => $(tr).find('th').length > 0).first()
+  headerRow.find('th').each((idx, th) => {
+    colIndex[normalizarCabecalho($(th).text())] = idx
+  })
+  const idxFuncional = colIndex['funcional']
+  const idxMorfologia = colIndex['morfologia']
+  const idxAndamento = colIndex['andamento']
+  const idxClassificacao = colIndex['classificacao']
 
   tabela.find('tr').each((_, tr) => {
     const $tr = $(tr)
@@ -186,12 +192,18 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
     const idMatch = hrefAnimal.match(/idAnimal=(\d+)/)
     const idAnimalAbccmm = idMatch ? parseInt(idMatch[1], 10) : null
 
-    // Com 3 colunas so ha pontuacao (sem colocacao separada ainda); com 4+
-    // as duas ultimas sao pontuacao e colocacao/classificacao.
-    const pontuacao = cells.length >= 4 ? ($(cells[cells.length - 2]).text().trim() || null) : ($(cells[cells.length - 1]).text().trim() || null)
-    const colocacao = cells.length >= 4 ? ($(cells[cells.length - 1]).text().trim() || null) : null
+    const celTexto = (idx: number | undefined) =>
+      idx != null && idx < cells.length ? ($(cells[idx]).text().trim() || null) : null
 
-    linhas.push({ numCatalogo, nomeAnimal, idAnimalAbccmm, pontuacao, colocacao })
+    linhas.push({
+      numCatalogo,
+      nomeAnimal,
+      idAnimalAbccmm,
+      pontuacaoFuncional: celTexto(idxFuncional),
+      pontuacaoMorfologia: celTexto(idxMorfologia),
+      pontuacaoAndamento: celTexto(idxAndamento),
+      colocacao: celTexto(idxClassificacao),
+    })
   })
 
   return linhas
@@ -216,17 +228,16 @@ export type RefreshSummary = {
 
 const BATCH = 300
 
-// Busca o indice de categorias e as 4 provas de cada uma, e grava tudo no
+// Busca o indice de categorias e a pagina Final de cada uma, e grava tudo no
 // Supabase. Concorrencia limitada para nao sobrecarregar o site da ABCCMM.
 //
 // Salva incrementalmente (a cada BATCH linhas prontas) em vez de acumular
-// tudo em memoria e so gravar no final: com ~200+ categorias x 4 provas e o
-// site da ABCCMM sendo lento/instavel, a sincronizacao inteira pode passar
-// dos 300s de limite da funcao na Vercel - se so salvasse no final, um
-// timeout no meio do caminho perdia TUDO que ja tinha sido raspado com
-// sucesso. Salvando aos poucos, o que ja foi processado fica gravado mesmo
-// que a funcao seja encerrada antes de terminar (a proxima sincronizacao
-// so completa o que faltou).
+// tudo em memoria e so gravar no final: com 200+ categorias e o site da
+// ABCCMM sendo lento/instavel, a sincronizacao inteira pode passar do limite
+// de tempo da funcao na Vercel - se so salvasse no final, um timeout no meio
+// do caminho perdia TUDO que ja tinha sido raspado com sucesso. Salvando aos
+// poucos, o que ja foi processado fica gravado mesmo que a funcao seja
+// encerrada antes de terminar (a proxima sincronizacao completa o resto).
 export async function refreshAllResults(): Promise<RefreshSummary> {
   const erros: string[] = []
 
@@ -237,15 +248,6 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
     return { classesProcessadas: 0, linhasAtualizadas: 0, erros: [`Falha ao buscar Resultados.aspx: ${(e as Error).message}`] }
   }
 
-  const tarefas = classes.flatMap(classe =>
-    TIPOS_PROVA.filter(tipo => classe.urls[tipo]).map(tipo => ({ classe, tipo }))
-  )
-  const semLink: Record<TipoProva, number> = { marcha: 0, morfologia: 0, funcional: 0, final: 0 }
-  for (const classe of classes) {
-    for (const tipo of TIPOS_PROVA) {
-      if (!classe.urls[tipo]) semLink[tipo]++
-    }
-  }
   let pendentes: Record<string, unknown>[] = []
   let totalSalvo = 0
 
@@ -258,42 +260,34 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
     else totalSalvo += lote.length
   }
 
-  await withConcurrency(tarefas, 3, async ({ classe, tipo }) => {
+  await withConcurrency(classes, 4, async (classe) => {
     try {
-      const url = classe.urls[tipo]
-      if (!url) return
-      const resultado = await fetchResultTable(url)
+      const resultado = await fetchResultTable(classe.urlFinal)
       for (const linha of resultado) {
         pendentes.push({
           tipo_campeonato: classe.tipoCampeonato,
           tipo_marcha: classe.tipoMarcha,
           categoria: classe.categoria,
-          tipo_prova: tipo,
+          tipo_prova: 'final',
           num_catalogo: linha.numCatalogo,
           nome_animal: linha.nomeAnimal,
           id_animal_abccmm: linha.idAnimalAbccmm,
           categoria_abccmm: classe.categoriaAbccmm,
           campeonato_abccmm: classe.campeonatoAbccmm,
           evento_abccmm: classe.eventoAbccmm,
-          pontuacao: linha.pontuacao,
+          pontuacao_funcional: linha.pontuacaoFuncional,
+          pontuacao_morfologia: linha.pontuacaoMorfologia,
+          pontuacao_andamento: linha.pontuacaoAndamento,
           colocacao: linha.colocacao,
         })
       }
       if (pendentes.length >= BATCH) await flush()
     } catch (e) {
-      erros.push(`${classe.tipoCampeonato} ${classe.tipoMarcha} ${classe.categoria} (${tipo}): ${(e as Error).message}`)
+      erros.push(`${classe.tipoCampeonato} ${classe.tipoMarcha} ${classe.categoria}: ${(e as Error).message}`)
     }
   })
 
   await flush()
-
-  // Nao e erro (categoria pode legitimamente nao ter uma prova - ex: potro
-  // sem funcional), mas ajuda a diferenciar "nao tem link" de "falhou ao
-  // buscar" quando uma prova aparece sistematicamente vazia.
-  const semLinkMsg = TIPOS_PROVA
-    .filter(tipo => semLink[tipo] > 0)
-    .map(tipo => `${tipo}: ${semLink[tipo]} categorias sem link nessa prova`)
-  if (semLinkMsg.length > 0) erros.push(`[info] ${semLinkMsg.join(' | ')}`)
 
   return { classesProcessadas: classes.length, linhasAtualizadas: totalSalvo, erros }
 }

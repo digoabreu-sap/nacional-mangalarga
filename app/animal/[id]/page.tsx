@@ -29,20 +29,27 @@ function GenealogyCard({ label, nome, registro }: { label: string; nome: string;
   )
 }
 
-type ResultadoAnimal = { tipo_prova: string; colocacao: string | null; pontuacao: string | null }
+type ResultadoAnimal = {
+  colocacao: string | null
+  pontuacao_funcional: string | null
+  pontuacao_morfologia: string | null
+  pontuacao_andamento: string | null
+}
 
-function ResultadoCard({ label, resultado }: { label: string; resultado: ResultadoAnimal | undefined }) {
+// Mesmo formato do resultado oficial da ABCCMM: Classificação em destaque,
+// com os 3 componentes que a formam (Funcional/Morfologia/Andamento) embaixo.
+function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) {
+  if (!resultado) {
+    return <p className="text-xs text-[var(--text-muted)] text-center py-2">Ainda nao julgado</p>
+  }
   return (
-    <div className="bg-[var(--bg-primary)] rounded-lg p-3 border border-[var(--border)] flex-1 min-w-0 text-center">
-      <p className="text-[10px] text-[var(--accent)] font-medium uppercase tracking-wide mb-1">{label}</p>
-      {resultado ? (
-        <>
-          <p className="text-lg font-bold truncate">{formatColocacaoOficial(resultado.colocacao)}</p>
-          {resultado.pontuacao && <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Pontuacao: {resultado.pontuacao}</p>}
-        </>
-      ) : (
-        <p className="text-xs text-[var(--text-muted)] mt-1">Ainda nao julgado</p>
-      )}
+    <div className="text-center">
+      <p className="text-2xl font-bold">{formatColocacaoOficial(resultado.colocacao)}</p>
+      <div className="flex items-center justify-center gap-4 mt-2 text-[10px] text-[var(--text-muted)]">
+        <span>Funcional: {resultado.pontuacao_funcional ?? '—'}</span>
+        <span>Morfologia: {resultado.pontuacao_morfologia ?? '—'}</span>
+        <span>Andamento: {resultado.pontuacao_andamento ?? '—'}</span>
+      </div>
     </div>
   )
 }
@@ -52,7 +59,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
   const [animal, setAnimal] = useState<Animal | null>(null)
   const [loading, setLoading] = useState(true)
   const [isFav, setIsFav] = useState(false)
-  const [resultados, setResultados] = useState<ResultadoAnimal[]>([])
+  const [resultado, setResultado] = useState<ResultadoAnimal | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -88,16 +95,17 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
 
   useEffect(() => {
     async function loadResultados() {
-      if (!animal?.num_catalogo) { setResultados([]); return }
+      if (!animal?.num_catalogo) { setResultado(null); return }
       const { data } = await supabase
         .from('nm_resultados')
-        .select('tipo_prova, colocacao, pontuacao')
+        .select('colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento')
         .eq('tipo_campeonato', animal.tipo_campeonato)
         .eq('tipo_marcha', animal.tipo_marcha)
         .eq('categoria', animal.categoria)
         .eq('num_catalogo', animal.num_catalogo)
-        .in('tipo_prova', ['marcha', 'final'])
-      setResultados(data || [])
+        .eq('tipo_prova', 'final')
+        .limit(1)
+      setResultado(data && data.length > 0 ? data[0] : null)
     }
     loadResultados()
   }, [animal])
@@ -183,16 +191,13 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
           </div>
         </div>
 
-        {/* Resultado (destaque para Marcha e Final/Categoria) */}
+        {/* Resultado oficial (mesmo formato da pagina Final da ABCCMM) */}
         <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide">Resultado</h3>
             <Link href="/resultados" className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">Ver categoria completa</Link>
           </div>
-          <div className="flex gap-2">
-            <ResultadoCard label="Marcha" resultado={resultados.find(r => r.tipo_prova === 'marcha')} />
-            <ResultadoCard label="Categoria" resultado={resultados.find(r => r.tipo_prova === 'final')} />
-          </div>
+          <ResultadoSection resultado={resultado} />
         </div>
 
         {/* Quando entra na pista (vinculo com o calendario pela categoria/campeonato) */}

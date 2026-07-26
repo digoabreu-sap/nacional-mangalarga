@@ -7,21 +7,18 @@ import BottomNav from '@/components/BottomNav'
 import { normalizarColocacao, formatColocacaoOficial } from '@/lib/colocacao'
 
 type ResultadoLinha = {
-  tipo_prova: string
   num_catalogo: string
   nome_animal: string | null
-  pontuacao: string | null
+  pontuacao_funcional: string | null
+  pontuacao_morfologia: string | null
+  pontuacao_andamento: string | null
   colocacao: string | null
 }
 
-const PROVAS: { tipo: string; label: string }[] = [
-  { tipo: 'marcha', label: 'Marcha' },
-  { tipo: 'morfologia', label: 'Morfologia' },
-  { tipo: 'funcional', label: 'Funcional' },
-  { tipo: 'final', label: 'Categoria' },
-]
-
-function ProvaTable({ linhas, catalogosExistentes }: { linhas: ResultadoLinha[]; catalogosExistentes: Set<string> }) {
+// Mesmo formato da pagina "Resultado Final" da ABCCMM: Nº, Competidor,
+// Funcional, Morfologia, Andamento (=marcha) e Classificação numa unica
+// tabela, em vez de 4 provas separadas.
+function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: ResultadoLinha[]; catalogosExistentes: Set<string> }) {
   if (linhas.length === 0) {
     return <p className="text-xs text-[var(--text-muted)] py-2">Ainda nao julgado</p>
   }
@@ -30,32 +27,36 @@ function ProvaTable({ linhas, catalogosExistentes }: { linhas: ResultadoLinha[];
     const ob = normalizarColocacao(b.colocacao)?.ordem ?? 999
     return oa - ob
   })
-  const colunas = 'grid grid-cols-[3rem_2.5rem_1fr_4rem] gap-2 items-center px-1'
+  const colunas = 'grid grid-cols-[2rem_1fr_3rem_3rem_3rem_5.5rem] gap-2 items-center px-1'
 
   return (
-    <div className="text-xs">
-      <div className={`${colunas} text-[var(--text-muted)] border-b border-[var(--border)] py-1.5`}>
-        <span>Coloc.</span>
+    <div className="text-xs overflow-x-auto">
+      <div className={`${colunas} text-[var(--text-muted)] border-b border-[var(--border)] py-1.5 min-w-[26rem]`}>
         <span>Nº</span>
-        <span>Animal</span>
-        <span className="text-right">Pontos</span>
+        <span>Competidor</span>
+        <span className="text-right">Func.</span>
+        <span className="text-right">Morf.</span>
+        <span className="text-right">Andam.</span>
+        <span className="text-right">Classificação</span>
       </div>
       {ordenadas.map((l, i) => {
         const existe = catalogosExistentes.has(l.num_catalogo)
         const conteudo = (
           <>
-            <span className="font-semibold">{formatColocacaoOficial(l.colocacao)}</span>
             <span className="text-[var(--text-muted)]">{l.num_catalogo}</span>
             <span className="truncate">{l.nome_animal}</span>
-            <span className="text-right text-[var(--text-muted)]">{l.pontuacao || '—'}</span>
+            <span className="text-right text-[var(--text-muted)]">{l.pontuacao_funcional ?? '—'}</span>
+            <span className="text-right text-[var(--text-muted)]">{l.pontuacao_morfologia ?? '—'}</span>
+            <span className="text-right text-[var(--text-muted)]">{l.pontuacao_andamento ?? '—'}</span>
+            <span className="text-right font-semibold">{formatColocacaoOficial(l.colocacao)}</span>
           </>
         )
         return existe ? (
-          <Link key={i} href={`/animal/${l.num_catalogo}`} className={`${colunas} py-1.5 border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-card-hover)]`}>
+          <Link key={i} href={`/animal/${l.num_catalogo}`} className={`${colunas} py-1.5 border-b border-[var(--border)] last:border-0 hover:bg-[var(--bg-card-hover)] min-w-[26rem]`}>
             {conteudo}
           </Link>
         ) : (
-          <div key={i} className={`${colunas} py-1.5 border-b border-[var(--border)] last:border-0`}>{conteudo}</div>
+          <div key={i} className={`${colunas} py-1.5 border-b border-[var(--border)] last:border-0 min-w-[26rem]`}>{conteudo}</div>
         )
       })}
     </div>
@@ -65,7 +66,7 @@ function ProvaTable({ linhas, catalogosExistentes }: { linhas: ResultadoLinha[];
 function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [porProva, setPorProva] = useState<Record<string, ResultadoLinha[]>>({})
+  const [linhas, setLinhas] = useState<ResultadoLinha[]>([])
   const [catalogosExistentes, setCatalogosExistentes] = useState<Set<string>>(new Set())
   const [loaded, setLoaded] = useState(false)
 
@@ -77,10 +78,11 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
       const [resultadosRes, animaisRes] = await Promise.all([
         supabase
           .from('nm_resultados')
-          .select('tipo_prova, num_catalogo, nome_animal, pontuacao, colocacao')
+          .select('num_catalogo, nome_animal, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, colocacao')
           .eq('tipo_campeonato', campeonato.tipo_campeonato)
           .eq('tipo_marcha', campeonato.tipo_marcha)
-          .eq('categoria', campeonato.categoria),
+          .eq('categoria', campeonato.categoria)
+          .eq('tipo_prova', 'final'),
         supabase
           .from('nm_animais')
           .select('num_catalogo')
@@ -89,12 +91,7 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
           .eq('categoria', campeonato.categoria),
       ])
 
-      const grupos: Record<string, ResultadoLinha[]> = {}
-      for (const linha of resultadosRes.data || []) {
-        if (!grupos[linha.tipo_prova]) grupos[linha.tipo_prova] = []
-        grupos[linha.tipo_prova].push(linha)
-      }
-      setPorProva(grupos)
+      setLinhas(resultadosRes.data || [])
 
       const existentes = new Set<string>()
       for (const a of animaisRes.data || []) {
@@ -129,18 +126,13 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
       </button>
 
       {expanded && (
-        <div className="border-t border-[var(--border)] bg-[var(--bg-primary)] p-3 space-y-4">
+        <div className="border-t border-[var(--border)] bg-[var(--bg-primary)] p-3">
           {loading ? (
             <div className="flex justify-center py-4">
               <div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
-            PROVAS.map(p => (
-              <div key={p.tipo}>
-                <h4 className="text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wide mb-1">{p.label}</h4>
-                <ProvaTable linhas={porProva[p.tipo] || []} catalogosExistentes={catalogosExistentes} />
-              </div>
-            ))
+            <ResultadoFinalTable linhas={linhas} catalogosExistentes={catalogosExistentes} />
           )}
         </div>
       )}
