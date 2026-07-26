@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
+import RankingDestaques from '@/components/RankingDestaques'
 
 type RankingItem = { id: number; nome: string; registro: string; haras: string; num_catalogo: number; total_votos: number }
 type CampeonatoRanking = { campeonato: string; ranking: RankingItem[] }
@@ -11,6 +12,7 @@ type CampeonatoRanking = { campeonato: string; ranking: RankingItem[] }
 const MEDAL_IMGS = ['/medals/medal_1.png', '/medals/medal_2.png', '/medals/medal_3.png']
 
 export default function RankingPage() {
+  const [secao, setSecao] = useState<'torcida' | 'destaques'>('destaques')
   const [rankings, setRankings] = useState<CampeonatoRanking[]>([])
   const [loading, setLoading] = useState(true)
   const [filterMarcha, setFilterMarcha] = useState<string>('Todas')
@@ -57,28 +59,44 @@ export default function RankingPage() {
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             </Link>
             <h1 className="text-base font-bold">Ranking</h1>
-            <span className="ml-auto text-xs text-[var(--text-muted)]">{filtered.length} categorias com votos</span>
           </div>
           <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5">
-            {['Todas', 'MB', 'MP'].map(m => (
+            {(['destaques', 'torcida'] as const).map(s => (
               <button
-                key={m}
-                onClick={() => setFilterMarcha(m)}
+                key={s}
+                onClick={() => setSecao(s)}
                 className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                  filterMarcha === m
-                    ? m === 'MB' ? 'bg-[var(--mb-color)] text-white' : m === 'MP' ? 'bg-[var(--mp-color)] text-white' : 'bg-[var(--accent)] text-white'
-                    : 'text-[var(--text-secondary)]'
+                  secao === s ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]'
                 }`}
               >
-                {m === 'Todas' ? 'Todas' : m === 'MB' ? 'M. Batida' : 'M. Picada'}
+                {s === 'destaques' ? 'Destaques' : 'Enquete da Torcida'}
               </button>
             ))}
           </div>
+          {secao === 'torcida' && (
+            <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5 mt-2">
+              {['Todas', 'MB', 'MP'].map(m => (
+                <button
+                  key={m}
+                  onClick={() => setFilterMarcha(m)}
+                  className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    filterMarcha === m
+                      ? m === 'MB' ? 'bg-[var(--mb-color)] text-white' : m === 'MP' ? 'bg-[var(--mp-color)] text-white' : 'bg-[var(--accent)] text-white'
+                      : 'text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {m === 'Todas' ? 'Todas' : m === 'MB' ? 'M. Batida' : 'M. Picada'}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </header>
 
       <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full">
-        {loading ? (
+        {secao === 'destaques' ? (
+          <RankingDestaques />
+        ) : loading ? (
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
           </div>
