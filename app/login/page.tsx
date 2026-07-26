@@ -25,11 +25,21 @@ export default function LoginPage() {
     if (!destino) { setError(mode === 'email' ? 'Digite seu email' : 'Digite seu telefone'); return }
 
     setSubmitting(true)
-    const { data, error: err } = await supabase.rpc('nm_login_simples', {
-      p_nome: nome.trim(),
-      p_tipo: mode,
-      p_destino: destino,
-    })
+    // Se ja existe um cadastro anonimo neste aparelho (criado na hora de
+    // votar), completa ele em vez de criar um usuario novo - assim o
+    // historico de votos nao se perde.
+    const { data, error: err } = user
+      ? await supabase.rpc('nm_completar_cadastro', {
+          p_usuario_id: user.id,
+          p_nome: nome.trim(),
+          p_tipo: mode,
+          p_destino: destino,
+        })
+      : await supabase.rpc('nm_login_simples', {
+          p_nome: nome.trim(),
+          p_tipo: mode,
+          p_destino: destino,
+        })
 
     if (err || !data?.user) {
       setError('Erro ao entrar. Tente novamente.')
@@ -47,7 +57,7 @@ export default function LoginPage() {
     </div>
   )
 
-  if (user) return (
+  if (user && (user.email || user.telefone)) return (
     <main className="flex flex-col min-h-screen">
       <header className="sticky top-0 z-50 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-b border-[var(--border)] px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center gap-3">
@@ -92,7 +102,9 @@ export default function LoginPage() {
               MM
             </div>
             <h2 className="text-lg font-bold">43a Nacional</h2>
-            <p className="text-xs text-[var(--text-muted)]">Entre para votar nos seus favoritos</p>
+            <p className="text-xs text-[var(--text-muted)]">
+              {user ? 'Complete seu cadastro para receber novidades' : 'Entre para votar nos seus favoritos'}
+            </p>
           </div>
 
           <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5 mb-4">
@@ -145,12 +157,14 @@ export default function LoginPage() {
               disabled={submitting}
               className="w-full py-2.5 bg-[var(--accent)] text-white font-semibold rounded-lg text-sm disabled:opacity-50"
             >
-              {submitting ? 'Entrando...' : 'Entrar e votar'}
+              {submitting ? 'Salvando...' : user ? 'Salvar cadastro' : 'Entrar e votar'}
             </button>
           </form>
 
           <p className="text-[10px] text-[var(--text-muted)] text-center mt-4">
-            Voce pode navegar sem login. O cadastro e necessario apenas para votar.
+            {user
+              ? 'Seus votos ja contam mesmo sem completar o cadastro.'
+              : 'Voce pode votar sem cadastro. Complete depois se quiser receber novidades.'}
           </p>
         </div>
       </div>

@@ -46,7 +46,7 @@ export default function Home() {
 function HomeContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, ensureUser } = useAuth()
   const campeonatoParam = searchParams.get('campeonato')
 
   // Modo padrao: trava na categoria "em pista" configurada no admin, sem
@@ -63,6 +63,10 @@ function HomeContent() {
   const [categoriaAtualCarregada, setCategoriaAtualCarregada] = useState(false)
   const [categoriaToast, setCategoriaToast] = useState<string | null>(null)
   const categoriaRef = useRef<{ categoria: string | null; marcha: string | null }>({ categoria: null, marcha: null })
+  // Enquanto um voto esta em andamento, evita que a hidratacao de "meu voto"
+  // (disparada pela mudanca de `user` quando cria o cadastro anonimo na
+  // hora) sobrescreva a atualizacao otimista com dados ainda desatualizados.
+  const votandoRef = useRef(false)
   const [categorias, setCategorias] = useState<string[]>([])
   const [criadores, setCriadores] = useState<string[]>([])
   const [expositores, setExpositores] = useState<string[]>([])
@@ -198,13 +202,14 @@ function HomeContent() {
   // coracao pintar de vermelho).
   useEffect(() => {
     if (searchMode || !user || animals.length === 0) { setMeuVotoPorCampeonato({}); return }
+    if (votandoRef.current) return
     const campeonatosUnicos = [...new Set(animals.map(a => a.campeonato).filter(Boolean))]
     let cancelado = false
     Promise.all(campeonatosUnicos.map(async camp => {
       const { data } = await supabase.rpc('nm_meu_voto', { p_usuario_id: user.id, p_campeonato: camp })
       return [camp, data && data.length > 0 ? data[0].animal_id : null] as const
     })).then(entries => {
-      if (cancelado) return
+      if (cancelado || votandoRef.current) return
       setMeuVotoPorCampeonato(Object.fromEntries(entries))
     })
     return () => { cancelado = true }
@@ -246,8 +251,17 @@ function HomeContent() {
   async function votarInline(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    if (!user) { router.push('/login'); return }
     if (!animal.campeonato) return
+
+    // Trava a hidratacao de "meu voto" enquanto isso roda - criar o usuario
+    // anonimo muda `user`, o que por si so dispara aquele efeito, e ele
+    // poderia sobrescrever a atualizacao otimista abaixo com dados antigos.
+    votandoRef.current = true
+
+    // Sem cadastro ainda? Cria um usuario anonimo na hora (so device_id) em
+    // vez de mandar pra tela de login - ninguem quer se cadastrar pra votar.
+    const votante = user ?? await ensureUser()
+    if (!votante) { votandoRef.current = false; return }
 
     const campeonato = animal.campeonato
     const votoAnterior = meuVotoPorCampeonato[campeonato] ?? null
@@ -263,13 +277,15 @@ function HomeContent() {
 
     try {
       const { error } = await supabase.rpc('nm_toggle_voto', {
-        p_usuario_id: user.id,
+        p_usuario_id: votante.id,
         p_animal_id: animal.id,
         p_campeonato: campeonato,
       })
       if (error) throw error
     } catch {
-      salvarVotosPendentes([...lerVotosPendentes(), { usuarioId: user.id, animalId: animal.id, campeonato }])
+      salvarVotosPendentes([...lerVotosPendentes(), { usuarioId: votante.id, animalId: animal.id, campeonato }])
+    } finally {
+      votandoRef.current = false
     }
   }
 
