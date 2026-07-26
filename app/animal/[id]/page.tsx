@@ -7,6 +7,7 @@ import { trackAnimalClick } from '@/components/Analytics'
 import BottomNav from '@/components/BottomNav'
 import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
+import { formatColocacaoOficial } from '@/lib/colocacao'
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
@@ -30,19 +31,13 @@ function GenealogyCard({ label, nome, registro }: { label: string; nome: string;
 
 type ResultadoAnimal = { tipo_prova: string; colocacao: string | null; pontuacao: string | null }
 
-function formatColocacao(colocacao: string | null): string {
-  if (!colocacao) return '—'
-  if (/^\d+$/.test(colocacao)) return `${colocacao}º Lugar`
-  return colocacao
-}
-
 function ResultadoCard({ label, resultado }: { label: string; resultado: ResultadoAnimal | undefined }) {
   return (
     <div className="bg-[var(--bg-primary)] rounded-lg p-3 border border-[var(--border)] flex-1 min-w-0 text-center">
       <p className="text-[10px] text-[var(--accent)] font-medium uppercase tracking-wide mb-1">{label}</p>
       {resultado ? (
         <>
-          <p className="text-lg font-bold truncate">{formatColocacao(resultado.colocacao)}</p>
+          <p className="text-lg font-bold truncate">{formatColocacaoOficial(resultado.colocacao)}</p>
           {resultado.pontuacao && <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Pontuacao: {resultado.pontuacao}</p>}
         </>
       ) : (
@@ -149,11 +144,6 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
             <h1 className="text-sm font-bold truncate">{animal.nome}</h1>
             <p className="text-[10px] text-[var(--text-muted)]">{animal.categoria}{(animal.tipo_campeonato === 'Exclusivamente Marcha' || animal.tambem_excl_marcha) ? ' · Excl. Marcha' : ''}</p>
           </div>
-          <button onClick={toggleFav} className="p-2">
-            <svg className={`w-5 h-5 ${isFav ? 'text-red-400 fill-red-400' : 'text-[var(--text-muted)]'}`} viewBox="0 0 24 24" stroke="currentColor" fill={isFav ? 'currentColor' : 'none'}>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-            </svg>
-          </button>
         </div>
       </header>
 
@@ -177,12 +167,19 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
               <h2 className="text-xl font-bold mb-1">{animal.nome}</h2>
               <p className="text-sm text-[var(--text-secondary)]">{animal.campeonato}</p>
             </div>
-            {animal.num_catalogo && (
-              <div className="text-right flex-shrink-0">
-                <p className="text-[10px] text-[var(--text-muted)] uppercase">Catalogo</p>
-                <p className="text-3xl font-bold text-[var(--accent)]">{animal.num_catalogo}</p>
-              </div>
-            )}
+            <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
+              <button onClick={toggleFav} className="p-1 -mr-1">
+                <svg className={`w-5 h-5 ${isFav ? 'text-red-400 fill-red-400' : 'text-[var(--text-muted)]'}`} viewBox="0 0 24 24" stroke="currentColor" fill={isFav ? 'currentColor' : 'none'}>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                </svg>
+              </button>
+              {animal.num_catalogo && (
+                <div>
+                  <p className="text-[10px] text-[var(--text-muted)] uppercase">Catalogo</p>
+                  <p className="text-3xl font-bold text-[var(--accent)]">{animal.num_catalogo}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

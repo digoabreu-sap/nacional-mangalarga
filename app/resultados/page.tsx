@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase, Campeonato } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
+import { normalizarColocacao, formatColocacaoOficial } from '@/lib/colocacao'
 
 type ResultadoLinha = {
   tipo_prova: string
@@ -20,23 +21,14 @@ const PROVAS: { tipo: string; label: string }[] = [
   { tipo: 'final', label: 'Categoria' },
 ]
 
-function formatColocacao(colocacao: string | null): string {
-  if (!colocacao) return '—'
-  if (/^\d+$/.test(colocacao)) return `${colocacao}º`
-  return colocacao
-}
-
 function ProvaTable({ linhas, catalogosExistentes }: { linhas: ResultadoLinha[]; catalogosExistentes: Set<string> }) {
   if (linhas.length === 0) {
     return <p className="text-xs text-[var(--text-muted)] py-2">Ainda nao julgado</p>
   }
   const ordenadas = [...linhas].sort((a, b) => {
-    const an = parseInt(a.colocacao || '', 10)
-    const bn = parseInt(b.colocacao || '', 10)
-    if (!isNaN(an) && !isNaN(bn)) return an - bn
-    if (!isNaN(an)) return -1
-    if (!isNaN(bn)) return 1
-    return 0
+    const oa = normalizarColocacao(a.colocacao)?.ordem ?? 999
+    const ob = normalizarColocacao(b.colocacao)?.ordem ?? 999
+    return oa - ob
   })
   const colunas = 'grid grid-cols-[3rem_2.5rem_1fr_4rem] gap-2 items-center px-1'
 
@@ -52,7 +44,7 @@ function ProvaTable({ linhas, catalogosExistentes }: { linhas: ResultadoLinha[];
         const existe = catalogosExistentes.has(l.num_catalogo)
         const conteudo = (
           <>
-            <span className="font-semibold">{formatColocacao(l.colocacao)}</span>
+            <span className="font-semibold">{formatColocacaoOficial(l.colocacao)}</span>
             <span className="text-[var(--text-muted)]">{l.num_catalogo}</span>
             <span className="truncate">{l.nome_animal}</span>
             <span className="text-right text-[var(--text-muted)]">{l.pontuacao || '—'}</span>

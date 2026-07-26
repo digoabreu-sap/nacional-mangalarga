@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
+import { formatColocacaoOficial } from '@/lib/colocacao'
 
 const MEDAL_IMGS = ['/medals/medal_1.png', '/medals/medal_2.png', '/medals/medal_3.png']
 
@@ -104,9 +105,7 @@ export default function VotingPanel({ animalId, campeonato }: { animalId: number
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <svg className="w-5 h-5" fill={voted ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                </svg>
+                <span className="text-lg leading-none">🏆</span>
                 {voted ? 'Meu voto neste animal' : votedOther ? 'Trocar meu voto para este' : 'Votar neste animal'}
               </>
             )}
@@ -149,7 +148,7 @@ export default function VotingPanel({ animalId, campeonato }: { animalId: number
           <div className="mt-4 pt-4 border-t border-[var(--border)] text-center">
             <h4 className="text-[10px] text-[var(--accent)] uppercase tracking-wide font-semibold mb-2">Resultado Oficial</h4>
             <p className="text-sm font-bold">{resultadoOficial.nome_animal}</p>
-            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{resultadoOficial.colocacao}</p>
+            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">{formatColocacaoOficial(resultadoOficial.colocacao)}</p>
             {ranking.length > 0 && (
               <p className="text-xs font-semibold mt-2 text-[var(--accent)]">
                 {ranking[0].nome === resultadoOficial.nome_animal

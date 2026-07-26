@@ -12,7 +12,7 @@ type CampeonatoRanking = { campeonato: string; ranking: RankingItem[] }
 const MEDAL_IMGS = ['/medals/medal_1.png', '/medals/medal_2.png', '/medals/medal_3.png']
 
 export default function RankingPage() {
-  const [secao, setSecao] = useState<'torcida' | 'destaques'>('destaques')
+  const [secao, setSecao] = useState<'torcida' | 'destaques'>('torcida')
   const [rankings, setRankings] = useState<CampeonatoRanking[]>([])
   const [loading, setLoading] = useState(true)
   const [filterMarcha, setFilterMarcha] = useState<string>('Todas')

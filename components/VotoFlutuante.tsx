@@ -127,7 +127,7 @@ export default function VotoFlutuante() {
           onClick={() => setAberto(true)}
           className="fixed bottom-20 left-3 z-40 flex items-center gap-1.5 px-3 py-2 bg-[var(--accent)] text-white text-xs font-semibold rounded-full shadow-lg active:scale-95 transition-transform"
         >
-          <span>♥</span> Votar
+          <span>🏆</span> Votar
         </button>
       ) : (
         <div className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40" onClick={() => setAberto(false)}>
@@ -167,7 +167,7 @@ export default function VotoFlutuante() {
                       <span className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold flex-shrink-0 ${
                         jaVotei ? 'bg-[var(--accent)] text-white' : 'bg-black/5 text-[var(--text-secondary)]'
                       }`}>
-                        <span>{jaVotei ? '♥' : '♡'}</span>
+                        <span>🏆</span>
                         {total > 0 && <span>{total}</span>}
                       </span>
                     </button>

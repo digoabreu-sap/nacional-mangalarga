@@ -48,7 +48,12 @@ function describeFetchError(e: unknown): string {
 }
 
 const FETCH_HEADERS = { 'User-Agent': 'Mozilla/5.0 (compatible; NacionalMMBot/1.0)' }
-const FETCH_TIMEOUT_MS = 30000
+// 30s por tentativa deixava o pior caso por tarefa (timeout + 2 retries)
+// passar de 1min e meio - com ~200+ categorias x 4 provas, isso sozinho ja
+// come boa parte (ou tudo) do tempo disponivel da funcao antes de terminar
+// de processar o catalogo inteiro. Reduzido pra girar o pool de concorrencia
+// mais rapido; o site costuma responder bem antes disso quando esta de pe.
+const FETCH_TIMEOUT_MS = 15000
 const FETCH_RETRIES = 2
 
 function sleep(ms: number) {
@@ -206,8 +211,19 @@ export type RefreshSummary = {
   erros: string[]
 }
 
+const BATCH = 300
+
 // Busca o indice de categorias e as 4 provas de cada uma, e grava tudo no
 // Supabase. Concorrencia limitada para nao sobrecarregar o site da ABCCMM.
+//
+// Salva incrementalmente (a cada BATCH linhas prontas) em vez de acumular
+// tudo em memoria e so gravar no final: com ~200+ categorias x 4 provas e o
+// site da ABCCMM sendo lento/instavel, a sincronizacao inteira pode passar
+// dos 300s de limite da funcao na Vercel - se so salvasse no final, um
+// timeout no meio do caminho perdia TUDO que ja tinha sido raspado com
+// sucesso. Salvando aos poucos, o que ja foi processado fica gravado mesmo
+// que a funcao seja encerrada antes de terminar (a proxima sincronizacao
+// so completa o que faltou).
 export async function refreshAllResults(): Promise<RefreshSummary> {
   const erros: string[] = []
 
@@ -218,14 +234,24 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
     return { classesProcessadas: 0, linhasAtualizadas: 0, erros: [`Falha ao buscar Resultados.aspx: ${(e as Error).message}`] }
   }
 
-  const linhas: Record<string, unknown>[] = []
   const tarefas = classes.flatMap(classe => TIPOS_PROVA.map(tipo => ({ classe, tipo })))
+  let pendentes: Record<string, unknown>[] = []
+  let totalSalvo = 0
+
+  async function flush() {
+    if (pendentes.length === 0) return
+    const lote = pendentes
+    pendentes = []
+    const { error } = await supabase.rpc('nm_admin_upsert_resultados', { p_rows: lote })
+    if (error) erros.push(`Falha ao salvar lote de ${lote.length} linhas: ${error.message}`)
+    else totalSalvo += lote.length
+  }
 
   await withConcurrency(tarefas, 3, async ({ classe, tipo }) => {
     try {
       const resultado = await fetchResultTable(classe.urls[tipo])
       for (const linha of resultado) {
-        linhas.push({
+        pendentes.push({
           tipo_campeonato: classe.tipoCampeonato,
           tipo_marcha: classe.tipoMarcha,
           categoria: classe.categoria,
@@ -240,17 +266,13 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
           colocacao: linha.colocacao,
         })
       }
+      if (pendentes.length >= BATCH) await flush()
     } catch (e) {
       erros.push(`${classe.tipoCampeonato} ${classe.tipoMarcha} ${classe.categoria} (${tipo}): ${(e as Error).message}`)
     }
   })
 
-  const BATCH = 500
-  for (let i = 0; i < linhas.length; i += BATCH) {
-    const lote = linhas.slice(i, i + BATCH)
-    const { error } = await supabase.rpc('nm_admin_upsert_resultados', { p_rows: lote })
-    if (error) erros.push(`Falha ao salvar lote ${i}-${i + lote.length}: ${error.message}`)
-  }
+  await flush()
 
-  return { classesProcessadas: classes.length, linhasAtualizadas: linhas.length, erros }
+  return { classesProcessadas: classes.length, linhasAtualizadas: totalSalvo, erros }
 }

@@ -6,6 +6,7 @@ import InstallPrompt from "@/components/InstallPrompt";
 import Analytics from "@/components/Analytics";
 import VideoAoVivo from "@/components/VideoAoVivo";
 import VotoFlutuante from "@/components/VotoFlutuante";
+import BuscaFlutuante from "@/components/BuscaFlutuante";
 import { AuthProvider } from "@/lib/auth";
 
 const geistSans = Geist({
@@ -56,6 +57,9 @@ export default function RootLayout({
           {/* Vota no favorito da categoria em pista de qualquer tela - some
               sozinho na Home, que ja tem a lista com voto inline. */}
           <VotoFlutuante />
+          {/* Acesso a busca de qualquer tela - some na Home, que ja tem seu
+              proprio icone de busca. */}
+          <BuscaFlutuante />
           <CookieConsent />
           <InstallPrompt />
         </AuthProvider>

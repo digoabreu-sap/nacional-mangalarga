@@ -47,16 +47,19 @@ function HomeContent() {
   const router = useRouter()
   const { user, ensureUser } = useAuth()
   const campeonatoParam = searchParams.get('campeonato')
+  const buscaParam = searchParams.get('busca')
 
   // Modo padrao: trava na categoria "em pista" configurada no admin, sem
   // filtro editavel - evita o usuario ficar mexendo em filtro toda hora.
   // A busca livre (com filtros de marcha/categoria) so aparece quando o
-  // usuario aciona o icone de busca (ou chega aqui via link de campeonato).
-  const [searchMode, setSearchMode] = useState(() => !!campeonatoParam)
+  // usuario aciona o icone de busca (ou chega aqui via link de campeonato
+  // ou do icone de busca flutuante global, com ?busca=1).
+  const [searchMode, setSearchMode] = useState(() => !!campeonatoParam || !!buscaParam)
   // So foca (e abre o teclado no celular) quando o usuario clicou de
-  // proposito no icone de busca - chegar aqui por um link de campeonato
-  // (calendario/campeonatos) nao deve abrir o teclado sozinho.
-  const [autoFocusBusca, setAutoFocusBusca] = useState(false)
+  // proposito num icone de busca (o da propria Home ou o flutuante global)
+  // - chegar aqui por um link de campeonato (calendario/campeonatos) nao
+  // deve abrir o teclado sozinho.
+  const [autoFocusBusca, setAutoFocusBusca] = useState(() => !!buscaParam)
 
   const [search, setSearch] = useState('')
   const [marcha, setMarcha] = useState<string>('Todas')
@@ -709,7 +712,7 @@ function HomeContent() {
                         jaVotei ? 'bg-[var(--accent)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
                       }`}
                     >
-                      <span>{jaVotei ? '♥' : '♡'}</span>
+                      <span>🏆</span>
                       {votos > 0 && <span>{votos}</span>}
                     </button>
                   )}
