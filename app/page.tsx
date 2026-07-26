@@ -295,6 +295,10 @@ function HomeContent() {
     setActiveFilter(null)
     setCategoria('Todas')
     setMarcha('Todas')
+    // Busca livre deve varrer o catalogo inteiro, nao so a categoria em
+    // pista - garante que nenhum filtro de campeonato de uma visita
+    // anterior (ex: veio de um link com ?campeonato=X) fique preso.
+    setCampeonatoFilter(null)
   }
 
   function fecharBusca() {
@@ -357,7 +361,7 @@ function HomeContent() {
         query = query.or(`registro.eq.${s},chip.eq.${s},num_catalogo.eq.${s}`)
       } else {
         const pattern = `%${s}%`
-        query = query.or(`nome.ilike.${pattern},criador.ilike.${pattern},expositor.ilike.${pattern},pai.ilike.${pattern},mae.ilike.${pattern}`)
+        query = query.or(`nome.ilike.${pattern},criador.ilike.${pattern},expositor.ilike.${pattern},pai.ilike.${pattern},mae.ilike.${pattern},haras.ilike.${pattern}`)
       }
     }
     if (marcha !== 'Todas') query = query.eq('tipo_marcha', marcha)
