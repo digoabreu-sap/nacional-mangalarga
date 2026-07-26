@@ -118,7 +118,7 @@ export default function VotoFlutuante() {
     }
   }
 
-  if (pathname === '/' || !categoriaAtual) return null
+  if (pathname === '/' || pathname.startsWith('/admin') || !categoriaAtual) return null
 
   return (
     <>

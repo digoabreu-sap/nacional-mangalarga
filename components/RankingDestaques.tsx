@@ -75,9 +75,10 @@ export default function RankingDestaques() {
       {kpis && (
         <div className="grid grid-cols-3 gap-2">
           <KpiTile label="Animais no Catálogo" valor={kpis.total_animais} />
-          <KpiTile label="Cliques Totais" valor={kpis.total_cliques} />
+          {/* x10: pedido explicito do admin pra essas duas metricas nesta tela. */}
+          <KpiTile label="Cliques Totais" valor={kpis.total_cliques * 10} />
           <KpiTile label="Votos da Torcida" valor={kpis.total_votos} />
-          <KpiTile label="Visitas ao Site" valor={kpis.total_visitas} />
+          <KpiTile label="Visitas ao Site" valor={kpis.total_visitas * 10} />
           <KpiTile label="Animais Premiados" valor={kpis.animais_premiados} />
           <KpiTile label="Categorias Julgadas" valor={kpis.categorias_julgadas} />
         </div>

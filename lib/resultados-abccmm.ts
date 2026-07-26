@@ -14,7 +14,10 @@ export type ClasseResultado = {
   categoriaAbccmm: number
   campeonatoAbccmm: number
   eventoAbccmm: number
-  urls: Record<TipoProva, string>
+  // Nem toda categoria tem as 4 provas (ex: potros nao tem prova funcional) -
+  // ausente aqui, em vez de apontar pra URL errada (a home do site, se o
+  // href da coluna estiver vazio).
+  urls: Partial<Record<TipoProva, string>>
 }
 
 export type LinhaResultado = {
@@ -120,9 +123,9 @@ export async function fetchClasses(): Promise<ClasseResultado[]> {
       eventoAbccmm,
       urls: {
         marcha: new URL(marchaHref, BASE_URL).toString(),
-        morfologia: new URL(morfologiaHref, BASE_URL).toString(),
-        funcional: new URL(funcionalHref, BASE_URL).toString(),
-        final: new URL(finalHref, BASE_URL).toString(),
+        ...(morfologiaHref ? { morfologia: new URL(morfologiaHref, BASE_URL).toString() } : {}),
+        ...(funcionalHref ? { funcional: new URL(funcionalHref, BASE_URL).toString() } : {}),
+        ...(finalHref ? { final: new URL(finalHref, BASE_URL).toString() } : {}),
       },
     })
   })
@@ -234,7 +237,15 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
     return { classesProcessadas: 0, linhasAtualizadas: 0, erros: [`Falha ao buscar Resultados.aspx: ${(e as Error).message}`] }
   }
 
-  const tarefas = classes.flatMap(classe => TIPOS_PROVA.map(tipo => ({ classe, tipo })))
+  const tarefas = classes.flatMap(classe =>
+    TIPOS_PROVA.filter(tipo => classe.urls[tipo]).map(tipo => ({ classe, tipo }))
+  )
+  const semLink: Record<TipoProva, number> = { marcha: 0, morfologia: 0, funcional: 0, final: 0 }
+  for (const classe of classes) {
+    for (const tipo of TIPOS_PROVA) {
+      if (!classe.urls[tipo]) semLink[tipo]++
+    }
+  }
   let pendentes: Record<string, unknown>[] = []
   let totalSalvo = 0
 
@@ -249,7 +260,9 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
 
   await withConcurrency(tarefas, 3, async ({ classe, tipo }) => {
     try {
-      const resultado = await fetchResultTable(classe.urls[tipo])
+      const url = classe.urls[tipo]
+      if (!url) return
+      const resultado = await fetchResultTable(url)
       for (const linha of resultado) {
         pendentes.push({
           tipo_campeonato: classe.tipoCampeonato,
@@ -273,6 +286,14 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
   })
 
   await flush()
+
+  // Nao e erro (categoria pode legitimamente nao ter uma prova - ex: potro
+  // sem funcional), mas ajuda a diferenciar "nao tem link" de "falhou ao
+  // buscar" quando uma prova aparece sistematicamente vazia.
+  const semLinkMsg = TIPOS_PROVA
+    .filter(tipo => semLink[tipo] > 0)
+    .map(tipo => `${tipo}: ${semLink[tipo]} categorias sem link nessa prova`)
+  if (semLinkMsg.length > 0) erros.push(`[info] ${semLinkMsg.join(' | ')}`)
 
   return { classesProcessadas: classes.length, linhasAtualizadas: totalSalvo, erros }
 }

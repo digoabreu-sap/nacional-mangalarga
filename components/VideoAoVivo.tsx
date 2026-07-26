@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 type Posicao = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
@@ -13,6 +14,7 @@ const POSICAO_CLASSES: Record<Posicao, string> = {
 }
 
 export default function VideoAoVivo() {
+  const pathname = usePathname()
   const [embedUrl, setEmbedUrl] = useState<string | null>(null)
   const [ativoAdmin, setAtivoAdmin] = useState(false)
   const [visivel, setVisivel] = useState(true)
@@ -52,6 +54,7 @@ export default function VideoAoVivo() {
     localStorage.setItem('nm_video_visivel', '1')
   }
 
+  if (pathname.startsWith('/admin')) return null
   if (!loaded || !ativoAdmin || !embedUrl) return null
 
   if (!visivel) {
