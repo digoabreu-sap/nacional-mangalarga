@@ -7,7 +7,6 @@ import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
 import Banner from '@/components/Banner'
 import BottomNav from '@/components/BottomNav'
-import VideoAoVivo from '@/components/VideoAoVivo'
 import { trackAnimalClick } from '@/components/Analytics'
 
 const MARCHAS = [
@@ -749,7 +748,6 @@ function HomeContent() {
 
       <BottomNav />
       <Banner posicao="nav_rodape" />
-      {!searchMode && <VideoAoVivo />}
     </main>
   )
 }

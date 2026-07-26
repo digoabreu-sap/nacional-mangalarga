@@ -4,6 +4,8 @@ import "./globals.css";
 import CookieConsent from "@/components/CookieConsent";
 import InstallPrompt from "@/components/InstallPrompt";
 import Analytics from "@/components/Analytics";
+import VideoAoVivo from "@/components/VideoAoVivo";
+import VotoFlutuante from "@/components/VotoFlutuante";
 import { AuthProvider } from "@/lib/auth";
 
 const geistSans = Geist({
@@ -48,6 +50,12 @@ export default function RootLayout({
         <AuthProvider>
           <Analytics />
           {children}
+          {/* Fica no layout raiz (nao numa pagina especifica) pra continuar
+              tocando ao navegar entre telas, em vez de recarregar do zero. */}
+          <VideoAoVivo />
+          {/* Vota no favorito da categoria em pista de qualquer tela - some
+              sozinho na Home, que ja tem a lista com voto inline. */}
+          <VotoFlutuante />
           <CookieConsent />
           <InstallPrompt />
         </AuthProvider>
