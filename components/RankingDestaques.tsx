@@ -13,7 +13,7 @@ type Kpis = {
   categorias_julgadas: number
 }
 
-type AnimalClicado = { animal_id: number; nome: string; num_catalogo: string; haras: string; cliques: number }
+type AnimalDestaque = { animal_id: number; nome: string; num_catalogo: string; haras: string; cliques?: number; premios?: number }
 type PorNome = { criador?: string; expositor?: string; cidade?: string; uf?: string; cliques?: number; premios?: number; animais: number }
 
 const TABS = ['cliques', 'premios'] as const
@@ -27,7 +27,7 @@ export default function RankingDestaques() {
   const [tab, setTab] = useState<Tab>('cliques')
   const [loading, setLoading] = useState(true)
   const [kpis, setKpis] = useState<Kpis | null>(null)
-  const [animais, setAnimais] = useState<AnimalClicado[]>([])
+  const [animais, setAnimais] = useState<AnimalDestaque[]>([])
   const [criadores, setCriadores] = useState<PorNome[]>([])
   const [expositores, setExpositores] = useState<PorNome[]>([])
   const [cidades, setCidades] = useState<PorNome[]>([])
@@ -45,12 +45,11 @@ export default function RankingDestaques() {
       setExpositores(exp.data || [])
       setCidades((cid.data || []).map((c: PorNome) => ({ ...c, criador: c.cidade ? `${c.cidade}${c.uf ? '/' + c.uf : ''}` : undefined })))
 
-      if (tab === 'cliques') {
-        const { data } = await supabase.rpc('nm_ranking_animais_cliques', { limit_count: 5 })
-        setAnimais(data || [])
-      } else {
-        setAnimais([])
-      }
+      const { data: animaisData } = await supabase.rpc(
+        tab === 'cliques' ? 'nm_ranking_animais_cliques' : 'nm_ranking_animais_premios',
+        { limit_count: 5 }
+      )
+      setAnimais(animaisData || [])
       setLoading(false)
     }
     setLoading(true)
@@ -99,7 +98,7 @@ export default function RankingDestaques() {
                 items={animais.map(a => ({
                   label: a.nome,
                   sublabel: a.haras || undefined,
-                  valor: a.cliques,
+                  valor: (tab === 'cliques' ? a.cliques : a.premios) || 0,
                   href: `/animal/${a.num_catalogo || a.animal_id}`,
                 }))}
               />

@@ -26,6 +26,14 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => {
+                // Link pra "/" nao faz nada se ja estamos em "/" (mesma rota,
+                // sem remount) - sem isso, sair da busca livre clicando em
+                // "Ao Vivo" nao tinha efeito nenhum na tela.
+                if (item.href === '/' && pathname === '/') {
+                  window.dispatchEvent(new Event('nm-ir-ao-vivo'))
+                }
+              }}
               className={`flex flex-col items-center gap-0.5 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

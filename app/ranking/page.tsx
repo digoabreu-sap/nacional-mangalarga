@@ -69,7 +69,7 @@ export default function RankingPage() {
                   secao === s ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]'
                 }`}
               >
-                {s === 'destaques' ? 'Destaques' : 'Enquete da Torcida'}
+                {s === 'destaques' ? 'Destaques' : 'Favoritos da Gameleira'}
               </button>
             ))}
           </div>

@@ -320,6 +320,15 @@ function HomeContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Clique em "Ao Vivo" no menu inferior enquanto ja em "/": o Link nao
+  // navega (mesma rota), entao o BottomNav avisa por evento pra sairmos da
+  // busca livre manualmente.
+  useEffect(() => {
+    function irAoVivo() { fecharBusca() }
+    window.addEventListener('nm-ir-ao-vivo', irAoVivo)
+    return () => window.removeEventListener('nm-ir-ao-vivo', irAoVivo)
+  }, [])
+
   const suggestions = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (q.length < 2) return []
