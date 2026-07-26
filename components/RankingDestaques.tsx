@@ -34,7 +34,7 @@ type Tab = typeof TABS[number]
 // quebrado por animal/criador/expositor/cidade/pai/mae - alvo e o
 // expositor/criador que quer ver o proprio desempenho, nao so o torcedor.
 export default function RankingDestaques() {
-  const [tab, setTab] = useState<Tab>('cliques')
+  const [tab, setTab] = useState<Tab>('pontos')
   const [loading, setLoading] = useState(true)
   const [kpis, setKpis] = useState<Kpis | null>(null)
   const [animais, setAnimais] = useState<AnimalDestaque[]>([])

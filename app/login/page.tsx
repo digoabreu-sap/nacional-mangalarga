@@ -98,9 +98,8 @@ export default function LoginPage() {
       <div className="flex-1 flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
           <div className="text-center mb-6">
-            <div className="w-14 h-14 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white font-bold text-xl mx-auto mb-3">
-              MM
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Logo" className="w-14 h-14 object-contain mx-auto mb-3" />
             <h2 className="text-lg font-bold">43a Nacional</h2>
             <p className="text-xs text-[var(--text-muted)]">
               {user ? 'Complete seu cadastro para receber novidades' : 'Entre para votar nos seus favoritos'}

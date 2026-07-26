@@ -76,7 +76,8 @@ export default function InstallPrompt() {
   return (
     <div className="fixed bottom-16 left-4 right-4 z-[95] max-w-lg mx-auto bg-[var(--bg-card)] border border-[var(--accent)]/40 rounded-xl p-4 shadow-2xl">
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">MM</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain flex-shrink-0" />
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Instale o app Nacional MM</p>
           {iosMode ? (

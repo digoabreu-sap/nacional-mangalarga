@@ -476,9 +476,8 @@ function HomeContent() {
       <header className="sticky top-0 z-50 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-b border-[var(--border)] px-4 pt-4 pb-3">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-              MM
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain flex-shrink-0" />
             <div>
               <h1 className="text-base font-bold leading-tight">43ª Nacional</h1>
               <p className="text-xs text-[var(--text-muted)]">Cavalo Mangalarga Marchador</p>

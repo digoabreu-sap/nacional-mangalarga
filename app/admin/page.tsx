@@ -124,7 +124,8 @@ function LoginForm({ onLogin }: { onLogin: (token: string, admin: Admin) => void
     <main className="min-h-screen bg-[var(--bg-primary)] flex items-center justify-center px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-sm bg-[var(--bg-card)] rounded-xl p-6 border border-[var(--border)]">
         <div className="text-center mb-6">
-          <div className="w-12 h-12 rounded-lg bg-[var(--accent)] flex items-center justify-center text-white font-bold text-xl mx-auto mb-3">MM</div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain mx-auto mb-3" />
           <h1 className="text-lg font-bold">Admin</h1>
           <p className="text-xs text-[var(--text-muted)]">43a Nacional Mangalarga Marchador</p>
         </div>
