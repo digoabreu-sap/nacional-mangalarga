@@ -16,7 +16,7 @@ type Kpis = {
 }
 
 type AnimalDestaque = { animal_id: number; nome: string; num_catalogo: string; haras: string; cliques?: number; pontos?: number }
-type PorNome = { criador?: string; expositor?: string; cidade?: string; uf?: string; pai?: string; mae?: string; cliques?: number; pontos?: number; animais: number }
+type PorNome = { criador?: string; expositor?: string; cidade?: string; uf?: string; pai?: string; mae?: string; cliques?: number; pontos?: number; animais: number; faixas?: number }
 
 type Dimensao = 'criador' | 'expositor' | 'cidade' | 'pai' | 'mae'
 type DetalheAnimal = {
@@ -170,7 +170,7 @@ export default function RankingDestaques() {
               <RankingBarList
                 unidade={unidade}
                 items={pais.map(p => ({
-                  label: p.criador || '', sublabel: `${p.animais} filhos premiados`, valor: p.pontos || 0,
+                  label: p.criador || '', sublabel: `${p.animais} filhos premiados e ${p.faixas ?? p.animais} faixas`, valor: p.pontos || 0,
                   onClick: () => abrirDetalhe('pai', p.pai || '', p.criador || ''),
                 }))}
               />
@@ -182,7 +182,7 @@ export default function RankingDestaques() {
               <RankingBarList
                 unidade={unidade}
                 items={maes.map(m => ({
-                  label: m.criador || '', sublabel: `${m.animais} filhos premiados`, valor: m.pontos || 0,
+                  label: m.criador || '', sublabel: `${m.animais} filhos premiados e ${m.faixas ?? m.animais} faixas`, valor: m.pontos || 0,
                   onClick: () => abrirDetalhe('mae', m.mae || '', m.criador || ''),
                 }))}
               />
