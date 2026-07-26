@@ -142,6 +142,10 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
   // layout, id contem "tblMarchadorIdeal") ANTES da tabela de verdade
   // (id contem "grvDetalhe") - sem exigir linha de dados aqui, ".first()"
   // pegava a vazia e a prova de final ficava sem nenhum resultado salvo.
+  // Colunas variam por prova: Final tem 6 (N, Competidor, Funcional,
+  // Morfologia, Andamento, Classificacao), mas Morfologia/Funcional isolados
+  // podem ter so 3 (N, Competidor, Pontuacao) - exigir 4 aqui descartava
+  // essas provas inteiras.
   const tabela = $('table')
     .filter((_, el) => {
       const $el = $(el)
@@ -150,7 +154,7 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
       if (!(id.includes('grv') || cls.includes('mGrid'))) return false
       return $el.find('tr').toArray().some(tr => {
         const $tr = $(tr)
-        return $tr.find('th').length === 0 && $tr.find('td').length >= 4
+        return $tr.find('th').length === 0 && $tr.find('td').length >= 3
       })
     })
     .first()
@@ -163,7 +167,7 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
     if ($tr.find('th').length > 0) return // linha de cabecalho
 
     const cells = $tr.find('td')
-    if (cells.length < 4) return
+    if (cells.length < 3) return
 
     const numCatalogo = $(cells[0]).text().trim()
     if (!numCatalogo) return
@@ -174,8 +178,10 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
     const idMatch = hrefAnimal.match(/idAnimal=(\d+)/)
     const idAnimalAbccmm = idMatch ? parseInt(idMatch[1], 10) : null
 
-    const pontuacao = $(cells[cells.length - 2]).text().trim() || null
-    const colocacao = $(cells[cells.length - 1]).text().trim() || null
+    // Com 3 colunas so ha pontuacao (sem colocacao separada ainda); com 4+
+    // as duas ultimas sao pontuacao e colocacao/classificacao.
+    const pontuacao = cells.length >= 4 ? ($(cells[cells.length - 2]).text().trim() || null) : ($(cells[cells.length - 1]).text().trim() || null)
+    const colocacao = cells.length >= 4 ? ($(cells[cells.length - 1]).text().trim() || null) : null
 
     linhas.push({ numCatalogo, nomeAnimal, idAnimalAbccmm, pontuacao, colocacao })
   })
