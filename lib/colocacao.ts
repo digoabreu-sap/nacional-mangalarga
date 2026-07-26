@@ -42,3 +42,28 @@ export function normalizarColocacao(bruto: string | null): ColocacaoOficial | nu
 export function formatColocacaoOficial(bruto: string | null): string {
   return normalizarColocacao(bruto)?.label ?? '—'
 }
+
+// A coluna "Andamento" (rotulada como "Marcha" na UI) traz a POSICAO do
+// animal naquela prova, nao um texto de colocacao - e uma classificacao
+// separada da colocacao geral da categoria (um animal pode ser Campeao da
+// categoria e tambem Campeao da marcha, ou so uma das duas). Mesma escala de
+// pontos/rotulos da hierarquia oficial, so que indexada pela posicao (rank
+// 1 = Campeao, 2 = Reservado, 3-7 = 1o-5o Premio, 8-10 = 1a-3a Mencao).
+export function normalizarColocacaoPorRank(rank: string | null): ColocacaoOficial | null {
+  if (!rank) return null
+  const n = parseInt(rank, 10)
+  if (!Number.isFinite(n) || n < 1 || n > 10) return null
+
+  if (n === 1) return { label: 'Campeão', pontos: 20, ordem: 1 }
+  if (n === 2) return { label: 'Reservado Campeão', pontos: 17, ordem: 2 }
+
+  const pontosPremio: Record<number, number> = { 3: 14, 4: 12, 5: 10, 6: 8, 7: 6 }
+  if (n in pontosPremio) return { label: `${n - 2}º Prêmio`, pontos: pontosPremio[n], ordem: n }
+
+  const pontosMencao: Record<number, number> = { 8: 4, 9: 2, 10: 1 }
+  return { label: `${n - 7}ª Menção Honrosa`, pontos: pontosMencao[n], ordem: n }
+}
+
+export function formatColocacaoMarcha(rank: string | null): string {
+  return normalizarColocacaoPorRank(rank)?.label ?? '—'
+}

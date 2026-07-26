@@ -37,3 +37,15 @@ export function trackAnimalClick(animalId: number) {
     body: JSON.stringify({ animal_id: animalId, session_id: sid }),
   })
 }
+
+export function trackBannerClick(bannerId: number) {
+  const consent = localStorage.getItem('nm_cookie_consent')
+  if (consent !== 'accepted') return
+
+  const sid = localStorage.getItem('nm_session_id') || ''
+  fetch('/api/analytics', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ banner_id: bannerId, session_id: sid }),
+  })
+}

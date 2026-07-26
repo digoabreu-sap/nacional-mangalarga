@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { trackBannerClick } from '@/components/Analytics'
 
 type BannerData = {
   id: number
@@ -37,12 +38,16 @@ export default function Banner({ posicao }: { posicao: 'topo' | 'rodape' | 'head
 
   function renderBanner(b: BannerData) {
     if (b.html_content) {
-      return <div dangerouslySetInnerHTML={{ __html: b.html_content }} className="h-full rounded-lg overflow-hidden" />
+      // HTML customizado pode ter (ou nao) seu proprio link - clique em
+      // qualquer ponto do banner ja conta como interacao, mesmo sem <a>.
+      return (
+        <div onClick={() => trackBannerClick(b.id)} dangerouslySetInnerHTML={{ __html: b.html_content }} className="h-full rounded-lg overflow-hidden" />
+      )
     }
     if (b.imagem_url) {
       const img = <img src={b.imagem_url} alt={b.titulo || 'Banner'} className="h-full w-auto rounded-lg object-contain" />
       return b.link_url ? (
-        <a href={b.link_url} target="_blank" rel="noopener noreferrer" className="block h-full">{img}</a>
+        <a href={b.link_url} target="_blank" rel="noopener noreferrer" onClick={() => trackBannerClick(b.id)} className="block h-full">{img}</a>
       ) : img
     }
     return null

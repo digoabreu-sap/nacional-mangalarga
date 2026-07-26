@@ -481,7 +481,7 @@ function HomeContent() {
             </div>
             <div>
               <h1 className="text-base font-bold leading-tight">43ª Nacional</h1>
-              <p className="text-xs text-[var(--text-muted)]">Mangalarga Marchador</p>
+              <p className="text-xs text-[var(--text-muted)]">Cavalo Mangalarga Marchador</p>
             </div>
             <div className="ml-auto flex items-center gap-3">
               <div className="text-right">

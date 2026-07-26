@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "43ª Exposição Nacional do Mangalarga Marchador",
+  title: "43ª Nacional do Cavalo Mangalarga Marchador",
   description: "Catálogo oficial com 1639 animais. Busque por nome, registro, haras, criador e muito mais.",
   manifest: "/manifest.json",
   appleWebApp: {

@@ -36,7 +36,7 @@ function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: Resultad
         <span>Competidor</span>
         <span className="text-right">Func.</span>
         <span className="text-right">Morf.</span>
-        <span className="text-right">Andam.</span>
+        <span className="text-right">Marcha</span>
         <span className="text-right">Classificação</span>
       </div>
       {ordenadas.map((l, i) => {

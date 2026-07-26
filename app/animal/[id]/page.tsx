@@ -7,7 +7,7 @@ import { trackAnimalClick } from '@/components/Analytics'
 import BottomNav from '@/components/BottomNav'
 import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
-import { formatColocacaoOficial } from '@/lib/colocacao'
+import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
@@ -36,19 +36,30 @@ type ResultadoAnimal = {
   pontuacao_andamento: string | null
 }
 
-// Mesmo formato do resultado oficial da ABCCMM: Classificação em destaque,
-// com os 3 componentes que a formam (Funcional/Morfologia/Andamento) embaixo.
+// Mesmo formato do resultado oficial da ABCCMM, com um destaque pra
+// colocacao geral da categoria e outro pra colocacao na marcha - sao
+// classificacoes independentes (um animal pode ser Campeao nas duas, so em
+// uma, ou em nenhuma), entao cada uma ganha seu proprio realce.
 function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) {
   if (!resultado) {
     return <p className="text-xs text-[var(--text-muted)] text-center py-2">Ainda nao julgado</p>
   }
   return (
-    <div className="text-center">
-      <p className="text-2xl font-bold">{formatColocacaoOficial(resultado.colocacao)}</p>
-      <div className="flex items-center justify-center gap-4 mt-2 text-[10px] text-[var(--text-muted)]">
+    <div>
+      <div className="grid grid-cols-2 divide-x divide-[var(--border)] text-center">
+        <div>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Categoria</p>
+          <p className="text-xl font-bold">{formatColocacaoOficial(resultado.colocacao)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Marcha</p>
+          <p className="text-xl font-bold">{formatColocacaoMarcha(resultado.pontuacao_andamento)}</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-[var(--text-muted)]">
         <span>Funcional: {resultado.pontuacao_funcional ?? '—'}</span>
         <span>Morfologia: {resultado.pontuacao_morfologia ?? '—'}</span>
-        <span>Andamento: {resultado.pontuacao_andamento ?? '—'}</span>
+        <span>Marcha: {resultado.pontuacao_andamento ?? '—'}</span>
       </div>
     </div>
   )
@@ -304,7 +315,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
             if (navigator.share) {
               navigator.share({
                 title: animal.nome,
-                text: `${animal.nome} - ${animal.campeonato} | 43ª Nacional Mangalarga Marchador`,
+                text: `${animal.nome} - ${animal.campeonato} | 43ª Nacional do Cavalo Mangalarga Marchador`,
                 url: window.location.href,
               })
             } else {

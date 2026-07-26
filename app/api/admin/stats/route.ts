@@ -36,5 +36,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ total: data || 0 })
   }
 
+  if (type === 'banner_clicks') {
+    const { data } = await supabase.rpc('nm_banner_cliques_stats')
+    return NextResponse.json(data || [])
+  }
+
   return NextResponse.json({ error: 'Tipo invalido' }, { status: 400 })
 }

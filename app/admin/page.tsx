@@ -567,15 +567,21 @@ function AnalyticsPanel({ token }: { token: string }) {
 
 function BannersPanel({ token }: { token: string }) {
   const [banners, setBanners] = useState<Banner[]>([])
+  const [cliques, setCliques] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0 })
 
   const loadBanners = useCallback(async () => {
-    const res = await fetch('/api/admin/banners', { headers: { 'Authorization': `Bearer ${token}` } })
-    const data = await res.json()
+    const [bannersRes, cliquesRes] = await Promise.all([
+      fetch('/api/admin/banners', { headers: { 'Authorization': `Bearer ${token}` } }),
+      fetch('/api/admin/stats?type=banner_clicks', { headers: { 'Authorization': `Bearer ${token}` } }),
+    ])
+    const data = await bannersRes.json()
+    const cliquesData: { banner_id: number; cliques: number }[] = await cliquesRes.json()
     setBanners(data)
+    setCliques(Object.fromEntries((cliquesData || []).map(c => [c.banner_id, c.cliques])))
     setLoading(false)
   }, [token])
 
@@ -666,6 +672,7 @@ function BannersPanel({ token }: { token: string }) {
                 </span>
                 <span className="text-sm ml-2">{b.titulo || '(sem titulo)'}</span>
                 <span className="text-[10px] text-[var(--text-muted)] ml-2">Ordem: {b.ordem}</span>
+                <span className="text-[10px] text-[var(--accent)] font-semibold ml-2">{cliques[b.id] || 0} cliques</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => toggleBanner(b)} className={`text-xs ${b.ativo ? 'text-green-400' : 'text-red-400'}`}>

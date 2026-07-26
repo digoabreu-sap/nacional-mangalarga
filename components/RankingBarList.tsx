@@ -1,6 +1,6 @@
 'use client'
 
-type Item = { label: string; sublabel?: string; valor: number; href?: string }
+type Item = { label: string; sublabel?: string; valor: number; href?: string; onClick?: () => void }
 
 const ACCENT = 'var(--accent)'
 
@@ -34,13 +34,21 @@ export default function RankingBarList({ items, unidade }: { items: Item[]; unid
             </div>
           </>
         )
-        return item.href ? (
-          <a key={item.label + i} href={item.href} className="block rounded-lg -mx-1 px-1 py-0.5 hover:bg-black/5 transition-colors">
-            {conteudo}
-          </a>
-        ) : (
-          <div key={item.label + i}>{conteudo}</div>
-        )
+        if (item.href) {
+          return (
+            <a key={item.label + i} href={item.href} className="block rounded-lg -mx-1 px-1 py-0.5 hover:bg-black/5 transition-colors">
+              {conteudo}
+            </a>
+          )
+        }
+        if (item.onClick) {
+          return (
+            <button key={item.label + i} onClick={item.onClick} className="block w-full text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-black/5 transition-colors">
+              {conteudo}
+            </button>
+          )
+        }
+        return <div key={item.label + i}>{conteudo}</div>
       })}
     </div>
   )
