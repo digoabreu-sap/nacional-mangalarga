@@ -340,7 +340,8 @@ function HomeContent() {
       if (/^\d+$/.test(s)) {
         query = query.or(`registro.eq.${s},chip.eq.${s},num_catalogo.eq.${s}`)
       } else {
-        query = query.ilike('nome', `%${s}%`)
+        const pattern = `%${s}%`
+        query = query.or(`nome.ilike.${pattern},criador.ilike.${pattern},expositor.ilike.${pattern},pai.ilike.${pattern},mae.ilike.${pattern}`)
       }
     }
     if (marcha !== 'Todas') query = query.eq('tipo_marcha', marcha)

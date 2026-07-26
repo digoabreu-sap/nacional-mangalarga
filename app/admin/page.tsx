@@ -2,6 +2,17 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
+import DailyViewsChart from '@/components/admin/DailyViewsChart'
+
+const TAB_LABELS: Record<'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'banners' | 'admins', string> = {
+  analytics: 'Analytics',
+  leads: 'Leads',
+  categoria: 'Categoria',
+  video: 'Vídeo',
+  resultados: 'Resultados',
+  banners: 'Banners',
+  admins: 'Admins',
+}
 
 type Admin = { id: number; email: string; nome: string }
 type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number }
@@ -66,7 +77,7 @@ export default function AdminPage() {
                 tab === t ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
             >
-              {t === 'analytics' ? 'Analytics' : t === 'leads' ? 'Leads' : t === 'categoria' ? 'Categoria' : t === 'resultados' ? 'Resultados' : t === 'banners' ? 'Banners' : 'Admins'}
+              {TAB_LABELS[t]}
             </button>
           ))}
         </div>
@@ -511,8 +522,6 @@ function AnalyticsPanel({ token }: { token: string }) {
 
   if (loading) return <div className="text-center py-8"><div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mx-auto" /></div>
 
-  const maxViews = Math.max(...dailyViews.map(d => d.total), 1)
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3">
@@ -529,17 +538,7 @@ function AnalyticsPanel({ token }: { token: string }) {
       {dailyViews.length > 0 && (
         <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
           <h3 className="text-xs font-semibold text-[var(--accent)] uppercase mb-3">Visitas Diarias</h3>
-          <div className="flex items-end gap-1 h-24">
-            {dailyViews.map(d => (
-              <div key={d.dia} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-[9px] text-[var(--text-muted)]">{d.total}</span>
-                <div className="w-full bg-[var(--accent)]/30 rounded-t" style={{ height: `${(d.total / maxViews) * 100}%`, minHeight: '4px' }}>
-                  <div className="w-full h-full bg-[var(--accent)] rounded-t" />
-                </div>
-                <span className="text-[8px] text-[var(--text-muted)]">{new Date(d.dia).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</span>
-              </div>
-            ))}
-          </div>
+          <DailyViewsChart dados={dailyViews} />
         </div>
       )}
 
