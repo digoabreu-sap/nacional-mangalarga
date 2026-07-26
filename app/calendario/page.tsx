@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import { SCHEDULE, getEventType, getMarchaType, isToday, isPast } from '@/lib/calendario'
@@ -11,8 +11,16 @@ export default function CalendarioPage() {
     const today = SCHEDULE.find(s => isToday(s.date))
     return today?.date || null
   })
+  const destaqueRef = useRef<HTMLDivElement>(null)
 
   const nextIdx = SCHEDULE.findIndex(s => !isPast(s.date))
+
+  // Ao abrir a pagina, leva direto pro dia de hoje (ou o proximo, se hoje
+  // estiver fora do periodo da expo) - sem isso o usuario tinha que rolar
+  // manualmente por todos os dias ja passados pra achar o de hoje.
+  useEffect(() => {
+    destaqueRef.current?.scrollIntoView({ block: 'start' })
+  }, [])
 
   return (
     <main className="flex flex-col min-h-screen">
@@ -62,13 +70,17 @@ export default function CalendarioPage() {
           if (filteredEvents.length === 0) return null
 
           return (
-            <div key={day.date} className={`rounded-xl border overflow-hidden transition-all ${
-              today ? 'border-[var(--accent)] bg-[var(--accent)]/5' :
-              isNext ? 'border-[var(--accent-dark)]/50 bg-[var(--accent-dark)]/5' :
-              day.highlight ? 'border-[var(--accent-dark)]/30' :
-              past ? 'border-[var(--border)] opacity-60' :
-              'border-[var(--border)]'
-            }`}>
+            <div
+              key={day.date}
+              ref={today || isNext ? destaqueRef : undefined}
+              className={`rounded-xl border overflow-hidden transition-all scroll-mt-24 ${
+                today ? 'border-[var(--accent)] bg-[var(--accent)]/5' :
+                isNext ? 'border-[var(--accent-dark)]/50 bg-[var(--accent-dark)]/5' :
+                day.highlight ? 'border-[var(--accent-dark)]/30' :
+                past ? 'border-[var(--border)] opacity-60' :
+                'border-[var(--border)]'
+              }`}
+            >
               <button
                 onClick={() => setExpandedDay(expanded ? null : day.date)}
                 className="w-full flex items-center gap-3 p-3 text-left bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)] transition-colors"
