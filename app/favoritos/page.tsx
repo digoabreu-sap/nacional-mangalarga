@@ -4,9 +4,13 @@ import { useState, useEffect } from 'react'
 import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
+import { formatColocacaoOficial } from '@/lib/colocacao'
+
+type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 
 export default function Favoritos() {
   const [animals, setAnimals] = useState<Animal[]>([])
+  const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -23,6 +27,18 @@ export default function Favoritos() {
         .order('num_catalogo_int', { ascending: true, nullsFirst: false })
       setAnimals(data ?? [])
       setLoading(false)
+
+      const catalogos = (data ?? []).map(a => a.num_catalogo).filter((n): n is string => !!n)
+      if (catalogos.length > 0) {
+        const { data: resultados } = await supabase
+          .from('nm_resultados')
+          .select('num_catalogo, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento')
+          .eq('tipo_prova', 'final')
+          .in('num_catalogo', catalogos)
+        if (resultados) {
+          setResultadosPorCatalogo(Object.fromEntries(resultados.map(r => [r.num_catalogo, r])))
+        }
+      }
     }
     load()
   }, [])
@@ -54,7 +70,9 @@ export default function Favoritos() {
           </div>
         ) : (
           <div className="space-y-2">
-            {animals.map(animal => (
+            {animals.map(animal => {
+              const resultado = animal.num_catalogo ? resultadosPorCatalogo[animal.num_catalogo] : undefined
+              return (
               <Link
                 key={animal.id}
                 href={`/animal/${animal.num_catalogo || animal.id}`}
@@ -71,6 +89,11 @@ export default function Favoritos() {
                     </div>
                     <h3 className="text-sm font-semibold truncate">{animal.nome}</h3>
                     <p className="text-xs text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
+                    {resultado && (
+                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                        Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-[10px] text-[var(--text-muted)] font-mono">Reg. {animal.registro}</p>
@@ -80,7 +103,8 @@ export default function Favoritos() {
                   </div>
                 </div>
               </Link>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
