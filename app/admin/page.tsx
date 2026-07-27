@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
@@ -548,6 +548,48 @@ type LinhaEdit = {
   origem: string
 }
 type CampoEditavel = 'pontuacao_funcional' | 'pontuacao_morfologia' | 'pontuacao_andamento' | 'colocacao'
+type PdfParseado = {
+  tipo_campeonato: string
+  tipo_marcha: 'MB' | 'MP'
+  categoria: string
+  tipo_competicao: string | null
+  campo: CampoEditavel
+  linhas: { num_catalogo: string; nome_animal: string; valor: string }[]
+}
+
+function normalizarTextoComparacao(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
+}
+
+function montarLinhasEdit(animais: AnimalOpt[], resultados: ResultadoManualRow[]): LinhaEdit[] {
+  return animais
+    .map(a => {
+      const existente = resultados.find(l => l.num_catalogo === a.num_catalogo)
+      return {
+        num_catalogo: a.num_catalogo,
+        nome_animal: existente?.nome_animal || a.nome,
+        pontuacao_funcional: existente?.pontuacao_funcional || '',
+        pontuacao_morfologia: existente?.pontuacao_morfologia || '',
+        pontuacao_andamento: existente?.pontuacao_andamento || '',
+        colocacao: existente?.colocacao || '',
+        origem: existente?.origem || '',
+      }
+    })
+    .sort((a, b) => (parseInt(a.num_catalogo, 10) || 0) - (parseInt(b.num_catalogo, 10) || 0))
+}
+
+// Aplica os valores lidos do PDF na coluna certa (campo) de cada linha, por
+// numero de catalogo - nunca mexe em linha ja OFICIAL (mesma regra do
+// cadastro manual: resultado raspado da ABCCMM sempre prevalece).
+function aplicarPdfNasLinhas(parseado: PdfParseado, linhas: LinhaEdit[]): LinhaEdit[] {
+  const porNumCatalogo = new Map(parseado.linhas.map(l => [l.num_catalogo, l.valor]))
+  return linhas.map(l => {
+    if (l.origem === 'abccmm') return l
+    const valor = porNumCatalogo.get(l.num_catalogo)
+    if (valor === undefined) return l
+    return { ...l, [parseado.campo]: valor }
+  })
+}
 
 // Cadastro manual de resultado (enquanto a ABCCMM ainda nao publicou o
 // oficial daquela categoria), no mesmo formato de tabela da pagina Final da
@@ -563,6 +605,14 @@ function ResultadoManualPanel({ token }: { token: string }) {
   const [loadingLinhas, setLoadingLinhas] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [pdfLoading, setPdfLoading] = useState(false)
+  const [pdfMsg, setPdfMsg] = useState('')
+  const [pdfParseado, setPdfParseado] = useState<PdfParseado | null>(null)
+  // Quando o PDF acha a categoria certa sozinho, a gente monta e mescla as
+  // linhas na mao e muda selectedId so pra atualizar o combo - sem essa
+  // trava, o efeito abaixo (que reage a mudanca de selectedId) recarregaria
+  // a categoria do zero e jogaria fora o que acabou de vir do PDF.
+  const pularProximoLoadRef = useRef(false)
 
   useEffect(() => {
     fetch('/api/admin/resultados-manual', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -578,30 +628,60 @@ function ResultadoManualPanel({ token }: { token: string }) {
     const params = new URLSearchParams({ tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria })
     const res = await fetch(`/api/admin/resultados-manual?${params}`, { headers: { 'Authorization': `Bearer ${token}` } })
     const data = await res.json()
-    const animais: AnimalOpt[] = data.animais || []
-    const resultados: ResultadoManualRow[] = data.resultados || []
-    const linhas: LinhaEdit[] = animais
-      .map(a => {
-        const existente = resultados.find(l => l.num_catalogo === a.num_catalogo)
-        return {
-          num_catalogo: a.num_catalogo,
-          nome_animal: existente?.nome_animal || a.nome,
-          pontuacao_funcional: existente?.pontuacao_funcional || '',
-          pontuacao_morfologia: existente?.pontuacao_morfologia || '',
-          pontuacao_andamento: existente?.pontuacao_andamento || '',
-          colocacao: existente?.colocacao || '',
-          origem: existente?.origem || '',
-        }
-      })
-      .sort((a, b) => (parseInt(a.num_catalogo, 10) || 0) - (parseInt(b.num_catalogo, 10) || 0))
-    setLinhasEdit(linhas)
+    setLinhasEdit(montarLinhasEdit(data.animais || [], data.resultados || []))
     setLoadingLinhas(false)
   }, [token, campeonato?.tipo_campeonato, campeonato?.tipo_marcha, campeonato?.categoria])
 
-  useEffect(() => { loadDados() }, [loadDados])
+  useEffect(() => {
+    if (pularProximoLoadRef.current) { pularProximoLoadRef.current = false; return }
+    loadDados()
+  }, [loadDados])
 
   function atualizarCampo(numCatalogo: string, campo: CampoEditavel, valor: string) {
     setLinhasEdit(prev => prev.map(l => l.num_catalogo === numCatalogo ? { ...l, [campo]: valor } : l))
+  }
+
+  async function carregarPdf(file: File) {
+    setPdfLoading(true)
+    setPdfMsg('')
+    setPdfParseado(null)
+    const formData = new FormData()
+    formData.append('pdf', file)
+    const res = await fetch('/api/admin/resultados-manual/pdf', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    })
+    const data = await res.json()
+    setPdfLoading(false)
+    if (!res.ok) { setPdfMsg(data.error || 'Erro ao ler o PDF'); return }
+
+    const encontrado = campeonatos.find(c =>
+      normalizarTextoComparacao(c.tipo_campeonato) === normalizarTextoComparacao(data.tipo_campeonato) &&
+      c.tipo_marcha === data.tipo_marcha &&
+      normalizarTextoComparacao(c.categoria) === normalizarTextoComparacao(data.categoria)
+    )
+
+    if (encontrado) {
+      const params = new URLSearchParams({ tipo_campeonato: encontrado.tipo_campeonato, tipo_marcha: encontrado.tipo_marcha, categoria: encontrado.categoria })
+      const res2 = await fetch(`/api/admin/resultados-manual?${params}`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const dados2 = await res2.json()
+      const linhasBase = montarLinhasEdit(dados2.animais || [], dados2.resultados || [])
+      pularProximoLoadRef.current = true
+      setLinhasEdit(aplicarPdfNasLinhas(data, linhasBase))
+      setSelectedId(String(encontrado.id))
+      setPdfMsg(`PDF aplicado (${data.tipo_competicao || 'resultado'}) em "${encontrado.nome}" - revise e clique em Salvar Todos.`)
+    } else {
+      setPdfParseado(data)
+      setPdfMsg(`PDF lido (${data.tipo_competicao || 'resultado'}): ${data.tipo_campeonato} - ${data.tipo_marcha} ${data.categoria}. Nao achei essa categoria na lista - selecione a categoria certa e clique em "Aplicar PDF Carregado".`)
+    }
+  }
+
+  function aplicarPdfPendente() {
+    if (!pdfParseado || !campeonato) return
+    setLinhasEdit(prev => aplicarPdfNasLinhas(pdfParseado, prev))
+    setPdfMsg(`PDF aplicado (${pdfParseado.tipo_competicao || 'resultado'}) - revise e clique em Salvar Todos.`)
+    setPdfParseado(null)
   }
 
   async function salvarTudo() {
@@ -648,6 +728,26 @@ function ResultadoManualPanel({ token }: { token: string }) {
       <p className="text-xs text-[var(--text-muted)]">
         Use enquanto a ABCCMM ainda nao publicou o resultado oficial dessa categoria. Preencha a tabela (tab entre os campos) e clique em Salvar Todos uma unica vez. Assim que a sincronizacao encontrar o oficial, ele sempre substitui o que foi cadastrado aqui - linhas ja OFICIAIS aparecem travadas.
       </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <label className={`px-4 py-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-sm font-semibold ${pdfLoading ? 'opacity-50' : 'cursor-pointer hover:border-[var(--accent)]/50'}`}>
+          {pdfLoading ? 'Lendo PDF...' : 'Carregar PDF de Resultado'}
+          <input
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            disabled={pdfLoading}
+            onChange={e => { const f = e.target.files?.[0]; if (f) carregarPdf(f); e.target.value = '' }}
+          />
+        </label>
+        {pdfParseado && campeonato && (
+          <button onClick={aplicarPdfPendente} className="px-3 py-2 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold">
+            Aplicar PDF Carregado
+          </button>
+        )}
+      </div>
+      {pdfMsg && <p className="text-xs text-[var(--accent)]">{pdfMsg}</p>}
+
       <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className={inputClass}>
         <option value="">Selecione a categoria...</option>
         {campeonatos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
