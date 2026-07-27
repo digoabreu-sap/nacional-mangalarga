@@ -16,9 +16,9 @@ type Kpis = {
 }
 
 type AnimalDestaque = { animal_id: number; nome: string; num_catalogo: string; haras: string; cliques?: number; pontos?: number }
-type PorNome = { criador?: string; expositor?: string; cidade?: string; uf?: string; pai?: string; mae?: string; cliques?: number; pontos?: number; animais: number; faixas?: number }
+type PorNome = { criador?: string; expositor?: string; haras?: string; pai?: string; mae?: string; cliques?: number; pontos?: number; animais: number; faixas?: number }
 
-type Dimensao = 'criador' | 'expositor' | 'cidade' | 'pai' | 'mae'
+type Dimensao = 'criador' | 'expositor' | 'haras' | 'pai' | 'mae'
 type DetalheAnimal = {
   animal_id: number; nome: string; num_catalogo: string; categoria: string; tipo_marcha: string
   colocacao: string | null; pontuacao_andamento: string | null; pontos: number
@@ -40,32 +40,32 @@ export default function RankingDestaques() {
   const [animais, setAnimais] = useState<AnimalDestaque[]>([])
   const [criadores, setCriadores] = useState<PorNome[]>([])
   const [expositores, setExpositores] = useState<PorNome[]>([])
-  const [cidades, setCidades] = useState<PorNome[]>([])
+  const [haras, setHaras] = useState<PorNome[]>([])
   const [pais, setPais] = useState<PorNome[]>([])
   const [maes, setMaes] = useState<PorNome[]>([])
   const [detalhe, setDetalhe] = useState<Detalhe | null>(null)
 
-  async function abrirDetalhe(dimensao: Dimensao, valor: string, titulo: string, uf?: string) {
+  async function abrirDetalhe(dimensao: Dimensao, valor: string, titulo: string) {
     if (!valor) return
     setDetalhe({ titulo, animais: [], loading: true })
-    const { data } = await supabase.rpc('nm_ranking_detalhe', { p_dimensao: dimensao, p_valor: valor, p_uf: uf || null })
+    const { data } = await supabase.rpc('nm_ranking_detalhe', { p_dimensao: dimensao, p_valor: valor })
     setDetalhe({ titulo, animais: data || [], loading: false })
   }
 
   useEffect(() => {
     async function load() {
       const sufixo = tab === 'cliques' ? 'cliques' : 'pontos'
-      const [k, cri, exp, cid, animaisRes] = await Promise.all([
+      const [k, cri, exp, har, animaisRes] = await Promise.all([
         supabase.rpc('nm_ranking_kpis'),
         supabase.rpc(`nm_ranking_criadores_${sufixo}`, { limit_count: 5 }),
         supabase.rpc(`nm_ranking_expositores_${sufixo}`, { limit_count: 5 }),
-        supabase.rpc(`nm_ranking_cidades_${sufixo}`, { limit_count: 5 }),
+        supabase.rpc(`nm_ranking_haras_${sufixo}`, { limit_count: 5 }),
         supabase.rpc(`nm_ranking_animais_${sufixo}`, { limit_count: 5 }),
       ])
       if (k.data) setKpis(k.data)
       setCriadores(cri.data || [])
       setExpositores(exp.data || [])
-      setCidades((cid.data || []).map((c: PorNome) => ({ ...c, criador: c.cidade ? `${c.cidade}${c.uf ? '/' + c.uf : ''}` : undefined })))
+      setHaras(har.data || [])
       setAnimais(animaisRes.data || [])
 
       if (tab === 'pontos') {
@@ -139,7 +139,9 @@ export default function RankingDestaques() {
             <RankingBarList
               unidade={unidade}
               items={criadores.map(c => ({
-                label: c.criador || '', sublabel: `${c.animais} animais`, valor: (tab === 'cliques' ? c.cliques : c.pontos) || 0,
+                label: c.criador || '',
+                sublabel: tab === 'pontos' ? `${c.animais} animais premiados e ${c.faixas ?? c.animais} faixas` : `${c.animais} animais`,
+                valor: (tab === 'cliques' ? c.cliques : c.pontos) || 0,
                 onClick: tab === 'pontos' ? () => abrirDetalhe('criador', c.criador || '', c.criador || '') : undefined,
               }))}
             />
@@ -149,18 +151,22 @@ export default function RankingDestaques() {
             <RankingBarList
               unidade={unidade}
               items={expositores.map(e => ({
-                label: e.expositor || '', sublabel: `${e.animais} animais`, valor: (tab === 'cliques' ? e.cliques : e.pontos) || 0,
+                label: e.expositor || '',
+                sublabel: tab === 'pontos' ? `${e.animais} animais premiados e ${e.faixas ?? e.animais} faixas` : `${e.animais} animais`,
+                valor: (tab === 'cliques' ? e.cliques : e.pontos) || 0,
                 onClick: tab === 'pontos' ? () => abrirDetalhe('expositor', e.expositor || '', e.expositor || '') : undefined,
               }))}
             />
           </Card>
 
-          <Card titulo="Cidades em Destaque">
+          <Card titulo="Haras em Destaque">
             <RankingBarList
               unidade={unidade}
-              items={cidades.map(c => ({
-                label: c.criador || '', sublabel: `${c.animais} animais`, valor: (tab === 'cliques' ? c.cliques : c.pontos) || 0,
-                onClick: tab === 'pontos' ? () => abrirDetalhe('cidade', c.cidade || '', c.criador || '', c.uf) : undefined,
+              items={haras.map(h => ({
+                label: h.haras || '',
+                sublabel: tab === 'pontos' ? `${h.animais} animais premiados e ${h.faixas ?? h.animais} faixas` : `${h.animais} animais`,
+                valor: (tab === 'cliques' ? h.cliques : h.pontos) || 0,
+                onClick: tab === 'pontos' ? () => abrirDetalhe('haras', h.haras || '', h.haras || '') : undefined,
               }))}
             />
           </Card>

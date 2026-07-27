@@ -1,16 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-type Posicao = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left'
-const POSICOES: Posicao[] = ['bottom-right', 'bottom-left', 'top-left', 'top-right']
-const POSICAO_CLASSES: Record<Posicao, string> = {
-  'bottom-right': 'bottom-20 right-3',
-  'bottom-left': 'bottom-20 left-3',
-  'top-right': 'top-20 right-3',
-  'top-left': 'top-20 left-3',
+const HEADER_H = 26 // altura da barra de titulo, em px - some ao calcular a altura total do player
+const MIN_WIDTH = 140
+const MAX_WIDTH = 480
+const MARGEM = 8
+
+type Pos = { x: number; y: number }
+
+function clampPos(pos: Pos, width: number, height: number): Pos {
+  const maxX = Math.max(MARGEM, window.innerWidth - width - MARGEM)
+  const maxY = Math.max(MARGEM, window.innerHeight - height - MARGEM)
+  return { x: Math.min(Math.max(pos.x, MARGEM), maxX), y: Math.min(Math.max(pos.y, MARGEM), maxY) }
 }
 
 export default function VideoAoVivo() {
@@ -18,8 +22,15 @@ export default function VideoAoVivo() {
   const [embedUrl, setEmbedUrl] = useState<string | null>(null)
   const [ativoAdmin, setAtivoAdmin] = useState(false)
   const [visivel, setVisivel] = useState(true)
-  const [posicao, setPosicao] = useState<Posicao>('bottom-right')
   const [loaded, setLoaded] = useState(false)
+  const [pos, setPos] = useState<Pos | null>(null)
+  const [width, setWidth] = useState(224)
+
+  // Arrasto e redimensionamento usam refs (nao re-renderizam a cada pixel de
+  // movimento) - o estado (pos/width) so e atualizado no fim do gesto.
+  const arrastoRef = useRef<{ offsetX: number; offsetY: number } | null>(null)
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     supabase.rpc('nm_get_video_live').then(({ data }) => {
@@ -33,15 +44,81 @@ export default function VideoAoVivo() {
 
     const v = localStorage.getItem('nm_video_visivel')
     if (v !== null) setVisivel(v === '1')
-    const p = localStorage.getItem('nm_video_posicao') as Posicao | null
-    if (p && POSICOES.includes(p)) setPosicao(p)
+
+    const savedWidth = Number(localStorage.getItem('nm_video_width'))
+    const w = savedWidth >= MIN_WIDTH && savedWidth <= MAX_WIDTH ? savedWidth : 224
+    setWidth(w)
+
+    const savedPos = localStorage.getItem('nm_video_pos')
+    if (savedPos) {
+      try {
+        const parsed = JSON.parse(savedPos)
+        setPos(clampPos(parsed, w, w / (16 / 9) + HEADER_H))
+        return
+      } catch { /* posicao salva invalida, cai pro default abaixo */ }
+    }
+    setPos({ x: window.innerWidth - w - 12, y: window.innerHeight - (w / (16 / 9) + HEADER_H) - 84 })
   }, [])
 
-  function trocarPosicao() {
-    const idx = POSICOES.indexOf(posicao)
-    const proxima = POSICOES[(idx + 1) % POSICOES.length]
-    setPosicao(proxima)
-    localStorage.setItem('nm_video_posicao', proxima)
+  // Se a janela mudar de tamanho (ex: rotacionar o celular), garante que o
+  // player nao fique preso fora da area visivel.
+  useEffect(() => {
+    function onResize() {
+      setPos(p => p ? clampPos(p, width, width / (16 / 9) + HEADER_H) : p)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [width])
+
+  const onDragMove = useCallback((e: PointerEvent) => {
+    if (!arrastoRef.current) return
+    setPos({ x: e.clientX - arrastoRef.current.offsetX, y: e.clientY - arrastoRef.current.offsetY })
+  }, [])
+
+  const onDragEnd = useCallback((e: PointerEvent) => {
+    if (!arrastoRef.current) return
+    arrastoRef.current = null
+    setPos(p => {
+      if (!p) return p
+      const h = boxRef.current?.offsetHeight ?? width / (16 / 9) + HEADER_H
+      const clamped = clampPos(p, width, h)
+      localStorage.setItem('nm_video_pos', JSON.stringify(clamped))
+      return clamped
+    })
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('pointerup', onDragEnd)
+  }, [onDragMove, width])
+
+  function iniciarArrasto(e: React.PointerEvent) {
+    if (!pos) return
+    arrastoRef.current = { offsetX: e.clientX - pos.x, offsetY: e.clientY - pos.y }
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', onDragEnd)
+  }
+
+  const onResizeMove = useCallback((e: PointerEvent) => {
+    if (!resizeRef.current) return
+    const novaLargura = Math.min(Math.max(resizeRef.current.startWidth + (e.clientX - resizeRef.current.startX), MIN_WIDTH), MAX_WIDTH)
+    setWidth(novaLargura)
+  }, [])
+
+  const onResizeEnd = useCallback(() => {
+    if (!resizeRef.current) return
+    resizeRef.current = null
+    setWidth(w => {
+      localStorage.setItem('nm_video_width', String(w))
+      setPos(p => (p ? clampPos(p, w, w / (16 / 9) + HEADER_H) : p))
+      return w
+    })
+    window.removeEventListener('pointermove', onResizeMove)
+    window.removeEventListener('pointerup', onResizeEnd)
+  }, [onResizeMove])
+
+  function iniciarResize(e: React.PointerEvent) {
+    e.stopPropagation()
+    resizeRef.current = { startX: e.clientX, startWidth: width }
+    window.addEventListener('pointermove', onResizeMove)
+    window.addEventListener('pointerup', onResizeEnd)
   }
 
   function esconder() {
@@ -69,20 +146,24 @@ export default function VideoAoVivo() {
     )
   }
 
+  if (!pos) return null
+
   return (
-    <div className={`fixed z-40 w-52 sm:w-64 rounded-xl overflow-hidden shadow-2xl border border-[var(--border)] bg-black ${POSICAO_CLASSES[posicao]}`}>
-      <div className="flex items-center justify-between px-2 py-1 bg-black/80">
+    <div
+      ref={boxRef}
+      className="fixed z-40 rounded-xl overflow-hidden shadow-2xl border border-[var(--border)] bg-black select-none"
+      style={{ left: pos.x, top: pos.y, width }}
+    >
+      <div
+        onPointerDown={iniciarArrasto}
+        className="flex items-center justify-between px-2 py-1 bg-black/80 touch-none cursor-grab active:cursor-grabbing"
+      >
         <span className="text-[10px] text-white font-semibold flex items-center gap-1">
           <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /> AO VIVO
         </span>
-        <div className="flex items-center gap-2">
-          <button onClick={trocarPosicao} title="Mudar posicao" className="text-white/70 hover:text-white text-xs leading-none">
-            ⤡
-          </button>
-          <button onClick={esconder} title="Esconder" className="text-white/70 hover:text-white text-xs leading-none">
-            ✕
-          </button>
-        </div>
+        <button onClick={esconder} title="Esconder" className="text-white/70 hover:text-white text-xs leading-none">
+          ✕
+        </button>
       </div>
       <div className="aspect-video">
         <iframe
@@ -91,6 +172,15 @@ export default function VideoAoVivo() {
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
         />
+      </div>
+      <div
+        onPointerDown={iniciarResize}
+        title="Redimensionar"
+        className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize touch-none flex items-end justify-end p-0.5"
+      >
+        <svg className="w-3 h-3 text-white/70" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M22 22H16V20H20V16H22V22ZM22 12H20V14H22V12ZM14 22H12V20H14V22Z" />
+        </svg>
       </div>
     </div>
   )
