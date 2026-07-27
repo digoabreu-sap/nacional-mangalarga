@@ -42,9 +42,16 @@ export default function AdminPage() {
     if (t && a) {
       try {
         const payload = JSON.parse(atob(t))
-        if (payload.exp > Date.now()) {
+        const admLido = JSON.parse(a)
+        // Sessao salva antes da feature de permissoes por aba nao tem
+        // is_master/permissoes nem no token nem no localStorage - nao da pra
+        // saber o nivel de acesso real sem logar de novo, entao forca um
+        // novo login em vez de deixar a pessoa presa numa tela "sem
+        // permissao" (ela pode muito bem ser master, so o dado esta stale).
+        const sessaoDesatualizada = !('is_master' in admLido) || !('is_master' in payload)
+        if (payload.exp > Date.now() && !sessaoDesatualizada) {
           setToken(t)
-          setAdmin(JSON.parse(a))
+          setAdmin({ ...admLido, is_master: !!admLido.is_master, permissoes: admLido.permissoes || [] })
         } else {
           localStorage.removeItem('nm_admin_token')
           localStorage.removeItem('nm_admin_user')
@@ -55,7 +62,7 @@ export default function AdminPage() {
 
   if (!token || !admin) return <LoginForm onLogin={(t, a) => { setToken(t); setAdmin(a) }} />
 
-  const abasVisiveis = TODAS_ABAS.filter(a => a === 'admins' ? admin.is_master : (admin.is_master || admin.permissoes.includes(a)))
+  const abasVisiveis = TODAS_ABAS.filter(a => a === 'admins' ? admin.is_master : (admin.is_master || (admin.permissoes || []).includes(a)))
   const tabAtual = abasVisiveis.includes(tab) ? tab : abasVisiveis[0]
 
   return (
@@ -1055,8 +1062,8 @@ function AdminsPanel({ token }: { token: string }) {
                 <p className="text-[10px] mt-1">
                   {a.is_master ? (
                     <span className="text-[var(--accent)] font-semibold">Master (acesso total)</span>
-                  ) : a.permissoes.length > 0 ? (
-                    <span className="text-[var(--text-muted)]">{a.permissoes.map(p => TAB_LABELS[p as AbaAdmin]).join(', ')}</span>
+                  ) : (a.permissoes || []).length > 0 ? (
+                    <span className="text-[var(--text-muted)]">{(a.permissoes || []).map(p => TAB_LABELS[p as AbaAdmin]).join(', ')}</span>
                   ) : (
                     <span className="text-red-400">Sem permissoes</span>
                   )}
