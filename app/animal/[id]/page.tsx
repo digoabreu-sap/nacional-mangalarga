@@ -3,7 +3,7 @@
 import { useState, useEffect, use, useMemo } from 'react'
 import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
-import { trackAnimalClick } from '@/components/Analytics'
+import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import BottomNav from '@/components/BottomNav'
 import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
@@ -75,6 +75,14 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
   const [loading, setLoading] = useState(true)
   const [isFav, setIsFav] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAnimal | null>(null)
+  const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
+
+  useEffect(() => {
+    supabase.rpc('nm_get_whatsapp_config').then(({ data }) => {
+      const atual = Array.isArray(data) ? data[0] : data
+      if (atual?.numero) setWhatsappConfig(atual)
+    })
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -312,6 +320,24 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
 
         {/* Voting */}
         <VotingPanel animalId={animal.id} campeonato={animal.campeonato} />
+
+        {/* Compre (WhatsApp) */}
+        {whatsappConfig?.numero && (
+          <button
+            onClick={() => {
+              trackWhatsappClick(animal.id)
+              const numeroLimpo = whatsappConfig.numero!.replace(/\D/g, '')
+              const identificacao = `${animal.nome}${animal.num_catalogo ? ` (Catálogo #${animal.num_catalogo})` : ''}`
+              const mensagem = (whatsappConfig.mensagem_template || 'Olá! Tenho interesse no animal {animal} da 43ª Nacional do Cavalo Mangalarga Marchador.')
+                .replace('{animal}', identificacao)
+              window.open(`https://wa.me/${numeroLimpo}?text=${encodeURIComponent(mensagem)}`, '_blank')
+            }}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-[#25D366] text-white font-semibold rounded-xl text-sm active:scale-[0.98] transition-transform"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 004.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2m0 1.67c2.24 0 4.35.87 5.93 2.46a8.23 8.23 0 012.42 5.85c0 4.55-3.7 8.25-8.36 8.25a8.3 8.3 0 01-4.21-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.22 8.22 0 01-1.26-4.39c0-4.55 3.71-8.31 8.27-8.31M8.53 7.33c-.16 0-.43.06-.66.31-.22.25-.86.84-.86 2.05s.88 2.38 1 2.55c.12.16 1.72 2.73 4.29 3.75 2.12.85 2.55.68 3.01.64.46-.05 1.49-.61 1.7-1.19.21-.59.21-1.09.15-1.19-.06-.11-.22-.17-.47-.3-.24-.12-1.48-.73-1.71-.81-.23-.09-.4-.13-.56.13-.17.25-.64.81-.79.98-.14.16-.29.18-.53.06-.25-.13-1.04-.38-1.98-1.22-.73-.65-1.23-1.46-1.37-1.7-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.12-.14.16-.25.24-.41.08-.17.04-.31-.02-.44-.06-.12-.56-1.37-.78-1.87-.2-.48-.4-.42-.56-.42h-.48" /></svg>
+            Compre — Falar no WhatsApp
+          </button>
+        )}
 
         {/* Share */}
         <button

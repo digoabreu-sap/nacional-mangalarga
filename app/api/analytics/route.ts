@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
-  const { animal_id, banner_id, session_id, page } = await req.json()
+  const { animal_id, banner_id, whatsapp_animal_id, session_id, page } = await req.json()
   const ip = req.headers.get('x-forwarded-for') || 'unknown'
   const ua = req.headers.get('user-agent') || ''
   const referrer = req.headers.get('referer') || ''
@@ -20,6 +20,13 @@ export async function POST(req: NextRequest) {
   if (banner_id) {
     await supabase.from('nm_banner_cliques').insert({
       banner_id,
+      session_id,
+    })
+  }
+
+  if (whatsapp_animal_id) {
+    await supabase.from('nm_whatsapp_cliques').insert({
+      animal_id: whatsapp_animal_id,
       session_id,
     })
   }

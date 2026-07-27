@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
-type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'banners' | 'sobre' | 'admins'
+type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'banners' | 'sobre' | 'whatsapp' | 'admins'
 
 const TAB_LABELS: Record<AbaAdmin, string> = {
   analytics: 'Analytics',
@@ -14,13 +14,14 @@ const TAB_LABELS: Record<AbaAdmin, string> = {
   resultados: 'Resultados',
   banners: 'Banners',
   sobre: 'Sobre',
+  whatsapp: 'WhatsApp',
   admins: 'Admins',
 }
-const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'admins']
+const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'whatsapp', 'admins']
 // Checkboxes de permissao concedidas por aba - "admins" fica de fora (so
 // quem e is_master mexe em admins/permissoes, pra ninguem restrito se
 // autopromover).
-const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre']
+const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'whatsapp']
 
 type Admin = { id: number; email: string; nome: string; is_master: boolean; permissoes: string[] }
 type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number }
@@ -110,6 +111,7 @@ export default function AdminPage() {
         {tabAtual === 'resultados' && <ResultadosPanel token={token} />}
         {tabAtual === 'banners' && <BannersPanel token={token} />}
         {tabAtual === 'sobre' && <SobrePanel token={token} />}
+        {tabAtual === 'whatsapp' && <WhatsappPanel token={token} />}
         {tabAtual === 'admins' && <AdminsPanel token={token} />}
       </div>
     </main>
@@ -1001,6 +1003,103 @@ function SobrePanel({ token }: { token: string }) {
       <button onClick={salvar} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
         {saving ? 'Salvando...' : 'Salvar'}
       </button>
+    </div>
+  )
+}
+
+type WhatsappTopAnimal = { animal_id: number; nome: string; num_catalogo: string; categoria: string; tipo_marcha: string; cliques: number }
+
+function WhatsappPanel({ token }: { token: string }) {
+  const [numero, setNumero] = useState('')
+  const [mensagem, setMensagem] = useState('')
+  const [totalCliques, setTotalCliques] = useState(0)
+  const [topAnimais, setTopAnimais] = useState<WhatsappTopAnimal[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    const res = await fetch('/api/admin/whatsapp', { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setNumero(data.numero || '')
+    setMensagem(data.mensagem_template || '')
+    setTotalCliques(data.total_cliques || 0)
+    setTopAnimais(data.top_animais || [])
+    setLoading(false)
+  }, [token])
+
+  useEffect(() => { load() }, [load])
+
+  async function salvar() {
+    setSaving(true)
+    setMsg('')
+    const res = await fetch('/api/admin/whatsapp', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero, mensagem_template: mensagem }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      setMsg('Salvo!')
+      setTimeout(() => setMsg(''), 3000)
+      load()
+    } else {
+      setMsg('Erro ao salvar')
+    }
+  }
+
+  if (loading) return <div className="text-center py-8"><div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+
+  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-sm font-semibold">Botão &quot;Compre&quot; (WhatsApp)</h3>
+      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
+        <p className="text-xs text-[var(--text-muted)]">
+          Numero que recebe a mensagem quando alguem clica em &quot;Compre&quot; na pagina de um animal. So digitos, com DDI e DDD (ex: 5511999999999). O botao some do site se o numero estiver vazio.
+        </p>
+        <input placeholder="5511999999999" value={numero} onChange={e => setNumero(e.target.value)} className={inputClass} />
+        <p className="text-xs text-[var(--text-muted)] mt-2">
+          Mensagem pre-preenchida. Use <code className="bg-black/10 px-1 rounded">{'{animal}'}</code> onde quiser que entre o nome/catalogo do animal.
+        </p>
+        <textarea
+          value={mensagem}
+          onChange={e => setMensagem(e.target.value)}
+          rows={3}
+          placeholder="Olá! Tenho interesse no animal {animal} da 43ª Nacional do Cavalo Mangalarga Marchador."
+          className={inputClass}
+        />
+        {msg && <p className="text-sm text-green-400">{msg}</p>}
+        <button onClick={salvar} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+          {saving ? 'Salvando...' : 'Salvar'}
+        </button>
+      </div>
+
+      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
+        <p className="text-[10px] text-[var(--text-muted)] uppercase">Cliques em &quot;Compre&quot; (total)</p>
+        <p className="text-2xl font-bold text-[var(--accent)]">{totalCliques.toLocaleString()}</p>
+      </div>
+
+      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
+        <h3 className="text-xs font-semibold text-[var(--accent)] uppercase mb-3">Animais com mais cliques em &quot;Compre&quot;</h3>
+        {topAnimais.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)]">Ainda sem cliques registrados</p>
+        ) : (
+          <div className="space-y-2">
+            {topAnimais.map((a, i) => (
+              <div key={a.animal_id} className="flex items-center gap-3 py-1.5 border-b border-[var(--border)] last:border-0">
+                <span className="text-xs font-bold text-[var(--accent)] w-6">{i + 1}.</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{a.nome}</p>
+                  <p className="text-[10px] text-[var(--text-muted)]">{a.categoria} - {a.tipo_marcha === 'MB' ? 'M. Batida' : 'M. Picada'}</p>
+                </div>
+                <span className="text-sm font-bold text-[var(--accent)]">{a.cliques}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
