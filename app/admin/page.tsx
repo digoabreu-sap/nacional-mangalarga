@@ -526,20 +526,25 @@ type ResultadoManualRow = {
   pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null
   colocacao: string | null; origem: string
 }
-
-const FORM_VAZIO = { num_catalogo: '', nome_animal: '', pontuacao_funcional: '', pontuacao_morfologia: '', pontuacao_andamento: '', colocacao: '' }
+type LinhaEdit = {
+  num_catalogo: string; nome_animal: string
+  pontuacao_funcional: string; pontuacao_morfologia: string; pontuacao_andamento: string; colocacao: string
+  origem: string
+}
+type CampoEditavel = 'pontuacao_funcional' | 'pontuacao_morfologia' | 'pontuacao_andamento' | 'colocacao'
 
 // Cadastro manual de resultado (enquanto a ABCCMM ainda nao publicou o
-// oficial daquela categoria) - o resultado raspado sempre prevalece: o RPC
-// de upsert manual ignora silenciosamente a escrita se ja existir uma linha
-// de origem 'abccmm' pra aquele animal (por isso o aviso "ignorado" abaixo).
+// oficial daquela categoria), no mesmo formato de tabela da pagina Final da
+// ABCCMM - toda a categoria de uma vez, pra digitar tabulando entre campos
+// e salvar tudo com 1 clique, em vez de selecionar animal por animal. O
+// resultado raspado sempre prevalece: o RPC de upsert manual ignora
+// silenciosamente a escrita se ja existir uma linha de origem 'abccmm' pra
+// aquele animal (por isso linhas oficiais aparecem travadas pra edicao).
 function ResultadoManualPanel({ token }: { token: string }) {
   const [campeonatos, setCampeonatos] = useState<CampeonatoOpt[]>([])
   const [selectedId, setSelectedId] = useState('')
-  const [animais, setAnimais] = useState<AnimalOpt[]>([])
-  const [linhas, setLinhas] = useState<ResultadoManualRow[]>([])
+  const [linhasEdit, setLinhasEdit] = useState<LinhaEdit[]>([])
   const [loadingLinhas, setLoadingLinhas] = useState(false)
-  const [form, setForm] = useState(FORM_VAZIO)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
@@ -552,34 +557,41 @@ function ResultadoManualPanel({ token }: { token: string }) {
   const campeonato = campeonatos.find(c => String(c.id) === selectedId) || null
 
   const loadDados = useCallback(async () => {
-    if (!campeonato) { setAnimais([]); setLinhas([]); return }
+    if (!campeonato) { setLinhasEdit([]); return }
     setLoadingLinhas(true)
     const params = new URLSearchParams({ tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria })
     const res = await fetch(`/api/admin/resultados-manual?${params}`, { headers: { 'Authorization': `Bearer ${token}` } })
     const data = await res.json()
-    setAnimais(data.animais || [])
-    setLinhas(data.resultados || [])
+    const animais: AnimalOpt[] = data.animais || []
+    const resultados: ResultadoManualRow[] = data.resultados || []
+    const linhas: LinhaEdit[] = animais
+      .map(a => {
+        const existente = resultados.find(l => l.num_catalogo === a.num_catalogo)
+        return {
+          num_catalogo: a.num_catalogo,
+          nome_animal: existente?.nome_animal || a.nome,
+          pontuacao_funcional: existente?.pontuacao_funcional || '',
+          pontuacao_morfologia: existente?.pontuacao_morfologia || '',
+          pontuacao_andamento: existente?.pontuacao_andamento || '',
+          colocacao: existente?.colocacao || '',
+          origem: existente?.origem || '',
+        }
+      })
+      .sort((a, b) => (parseInt(a.num_catalogo, 10) || 0) - (parseInt(b.num_catalogo, 10) || 0))
+    setLinhasEdit(linhas)
     setLoadingLinhas(false)
   }, [token, campeonato?.tipo_campeonato, campeonato?.tipo_marcha, campeonato?.categoria])
 
-  useEffect(() => { setForm(FORM_VAZIO); loadDados() }, [loadDados])
+  useEffect(() => { loadDados() }, [loadDados])
 
-  function selecionarAnimalNoForm(numCatalogo: string) {
-    const animal = animais.find(a => a.num_catalogo === numCatalogo)
-    const existente = linhas.find(l => l.num_catalogo === numCatalogo)
-    setForm({
-      num_catalogo: numCatalogo,
-      nome_animal: existente?.nome_animal || animal?.nome || '',
-      pontuacao_funcional: existente?.pontuacao_funcional || '',
-      pontuacao_morfologia: existente?.pontuacao_morfologia || '',
-      pontuacao_andamento: existente?.pontuacao_andamento || '',
-      colocacao: existente?.colocacao || '',
-    })
+  function atualizarCampo(numCatalogo: string, campo: CampoEditavel, valor: string) {
+    setLinhasEdit(prev => prev.map(l => l.num_catalogo === numCatalogo ? { ...l, [campo]: valor } : l))
   }
 
-  async function salvar(e: React.FormEvent) {
-    e.preventDefault()
-    if (!campeonato || !form.num_catalogo) return
+  async function salvarTudo() {
+    if (!campeonato) return
+    const comDados = linhasEdit.filter(l => l.origem !== 'abccmm' && (l.pontuacao_funcional || l.pontuacao_morfologia || l.pontuacao_andamento || l.colocacao))
+    if (comDados.length === 0) { setMsg('Nenhum dado novo pra salvar.'); return }
     setSaving(true)
     setMsg('')
     const res = await fetch('/api/admin/resultados-manual', {
@@ -587,14 +599,14 @@ function ResultadoManualPanel({ token }: { token: string }) {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria,
-        ...form,
+        linhas: comDados,
       }),
     })
     setSaving(false)
     if (res.ok) {
       const data = await res.json()
-      setMsg(data.ignorado ? 'Ja existe resultado oficial (ABCCMM) pra esse animal - cadastro manual ignorado.' : 'Salvo!')
-      if (!data.ignorado) setTimeout(() => setMsg(''), 3000)
+      setMsg(`${data.salvos} resultado(s) salvo(s)${data.ignorados?.length ? ` · ${data.ignorados.length} ignorado(s) por ja ter oficial` : ''}.`)
+      setTimeout(() => setMsg(''), 5000)
       loadDados()
     } else {
       setMsg('Erro ao salvar')
@@ -612,12 +624,13 @@ function ResultadoManualPanel({ token }: { token: string }) {
   }
 
   const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+  const cellInputClass = "w-full py-1 px-1.5 bg-[var(--bg-primary)] border border-[var(--border)] rounded text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
 
   return (
     <div className="space-y-3 pt-2">
       <h3 className="text-sm font-semibold">Cadastro Manual de Resultado</h3>
       <p className="text-xs text-[var(--text-muted)]">
-        Use enquanto a ABCCMM ainda nao publicou o resultado oficial dessa categoria. Assim que a sincronizacao encontrar o oficial, ele sempre substitui o que foi cadastrado aqui.
+        Use enquanto a ABCCMM ainda nao publicou o resultado oficial dessa categoria. Preencha a tabela (tab entre os campos) e clique em Salvar Todos uma unica vez. Assim que a sincronizacao encontrar o oficial, ele sempre substitui o que foi cadastrado aqui - linhas ja OFICIAIS aparecem travadas.
       </p>
       <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className={inputClass}>
         <option value="">Selecione a categoria...</option>
@@ -627,57 +640,74 @@ function ResultadoManualPanel({ token }: { token: string }) {
       {campeonato && (
         loadingLinhas ? (
           <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" /></div>
+        ) : linhasEdit.length === 0 ? (
+          <p className="text-xs text-[var(--text-muted)]">Nenhum animal cadastrado nessa categoria.</p>
         ) : (
           <>
-            <form onSubmit={salvar} className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
-              <select value={form.num_catalogo} onChange={e => selecionarAnimalNoForm(e.target.value)} className={inputClass} required>
-                <option value="">Selecione o animal...</option>
-                {animais.map(a => {
-                  const linha = linhas.find(l => l.num_catalogo === a.num_catalogo)
-                  return (
-                    <option key={a.id} value={a.num_catalogo}>
-                      #{a.num_catalogo} - {a.nome}{linha ? ` (ja tem resultado ${linha.origem === 'abccmm' ? 'oficial' : 'manual'})` : ''}
-                    </option>
-                  )
-                })}
-              </select>
-              <div className="grid grid-cols-3 gap-2">
-                <input placeholder="Funcional" value={form.pontuacao_funcional} onChange={e => setForm({ ...form, pontuacao_funcional: e.target.value })} className={inputClass} />
-                <input placeholder="Morfologia" value={form.pontuacao_morfologia} onChange={e => setForm({ ...form, pontuacao_morfologia: e.target.value })} className={inputClass} />
-                <input placeholder="Marcha" value={form.pontuacao_andamento} onChange={e => setForm({ ...form, pontuacao_andamento: e.target.value })} className={inputClass} />
-              </div>
-              <input
-                placeholder="Classificacao (ex: Campeão(ã), 1 Prêmio, 1 Menção Honrosa...)"
-                value={form.colocacao}
-                onChange={e => setForm({ ...form, colocacao: e.target.value })}
-                className={inputClass}
-              />
-              {msg && <p className="text-xs text-[var(--accent)]">{msg}</p>}
-              <button type="submit" disabled={saving || !form.num_catalogo} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
-                {saving ? 'Salvando...' : 'Salvar Resultado'}
-              </button>
-            </form>
-
-            {linhas.length > 0 && (
-              <div className="space-y-1.5">
-                {linhas.slice().sort((a, b) => a.num_catalogo.localeCompare(b.num_catalogo)).map(l => (
-                  <div key={l.num_catalogo} className="flex items-center justify-between gap-2 bg-[var(--bg-card)] rounded-lg p-2 border border-[var(--border)]">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold truncate">#{l.num_catalogo} {l.nome_animal}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">
-                        F:{l.pontuacao_funcional ?? '-'} M:{l.pontuacao_morfologia ?? '-'} Ma:{l.pontuacao_andamento ?? '-'} · {l.colocacao || 'sem classificacao'}
-                      </p>
-                    </div>
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${l.origem === 'abccmm' ? 'bg-black/10 text-[var(--text-primary)]' : 'bg-[var(--accent)]/10 text-[var(--accent)]'}`}>
-                      {l.origem === 'abccmm' ? 'OFICIAL' : 'MANUAL'}
-                    </span>
-                    {l.origem === 'manual' && (
-                      <button onClick={() => excluir(l.num_catalogo)} className="text-xs text-red-400 flex-shrink-0">Excluir</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+            <div className="overflow-x-auto -mx-1 px-1">
+              <table className="w-full text-xs border-collapse min-w-[38rem]">
+                <thead>
+                  <tr className="text-[var(--text-muted)] text-left">
+                    <th className="py-1.5 pr-2 font-medium">Nº</th>
+                    <th className="py-1.5 pr-2 font-medium">Competidor</th>
+                    <th className="py-1.5 pr-2 font-medium w-16">Func.</th>
+                    <th className="py-1.5 pr-2 font-medium w-16">Morf.</th>
+                    <th className="py-1.5 pr-2 font-medium w-16">Marcha</th>
+                    <th className="py-1.5 pr-2 font-medium w-32">Classificação</th>
+                    <th className="py-1.5 font-medium w-14"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhasEdit.map(l => {
+                    const oficial = l.origem === 'abccmm'
+                    return (
+                      <tr key={l.num_catalogo} className="border-t border-[var(--border)]">
+                        <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.num_catalogo}</td>
+                        <td className="py-1.5 pr-2 truncate max-w-[9rem]" title={l.nome_animal}>{l.nome_animal}</td>
+                        {oficial ? (
+                          <>
+                            <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.pontuacao_funcional || '—'}</td>
+                            <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.pontuacao_morfologia || '—'}</td>
+                            <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.pontuacao_andamento || '—'}</td>
+                            <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.colocacao || '—'}</td>
+                            <td className="py-1.5"><span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/10 whitespace-nowrap">OFICIAL</span></td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="py-1.5 pr-2">
+                              <input value={l.pontuacao_funcional} onChange={e => atualizarCampo(l.num_catalogo, 'pontuacao_funcional', e.target.value)} className={cellInputClass} />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <input value={l.pontuacao_morfologia} onChange={e => atualizarCampo(l.num_catalogo, 'pontuacao_morfologia', e.target.value)} className={cellInputClass} />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <input value={l.pontuacao_andamento} onChange={e => atualizarCampo(l.num_catalogo, 'pontuacao_andamento', e.target.value)} className={cellInputClass} />
+                            </td>
+                            <td className="py-1.5 pr-2">
+                              <input
+                                value={l.colocacao}
+                                onChange={e => atualizarCampo(l.num_catalogo, 'colocacao', e.target.value)}
+                                placeholder="Campeão(ã), 1 Prêmio..."
+                                className={cellInputClass}
+                              />
+                            </td>
+                            <td className="py-1.5">
+                              {l.origem === 'manual' && (
+                                <button type="button" onClick={() => excluir(l.num_catalogo)} className="text-[10px] text-red-400 whitespace-nowrap">Excluir</button>
+                              )}
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {msg && <p className="text-xs text-[var(--accent)]">{msg}</p>}
+            <button onClick={salvarTudo} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+              {saving ? 'Salvando...' : 'Salvar Todos'}
+            </button>
           </>
         )
       )}

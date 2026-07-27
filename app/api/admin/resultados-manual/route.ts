@@ -30,38 +30,51 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ animais: animaisRes.data || [], resultados: resultadosRes.data || [] })
 }
 
+type LinhaManual = {
+  num_catalogo: string
+  nome_animal?: string | null
+  pontuacao_funcional?: string | null
+  pontuacao_morfologia?: string | null
+  pontuacao_andamento?: string | null
+  colocacao?: string | null
+}
+
 export async function POST(req: NextRequest) {
   if (!autorizado(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
 
   const body = await req.json()
-  const { tipo_campeonato, tipo_marcha, categoria, num_catalogo } = body
-  if (!tipo_campeonato || !tipo_marcha || !categoria || !num_catalogo) {
+  const { tipo_campeonato, tipo_marcha, categoria } = body
+  const linhas: LinhaManual[] = body.linhas
+  if (!tipo_campeonato || !tipo_marcha || !categoria || !Array.isArray(linhas) || linhas.length === 0) {
     return NextResponse.json({ error: 'Campos obrigatorios faltando' }, { status: 400 })
   }
 
-  // Confere se ja existe resultado oficial (abccmm) pra esse animal - o RPC
-  // ja ignora a escrita nesse caso, mas o admin precisa saber que nao rolou.
-  const { data: existente } = await supabase
+  // Confere quais dessas linhas ja tem resultado oficial (abccmm) - o RPC
+  // ja ignora a escrita nesse caso, mas o admin precisa saber quais nao rolaram.
+  const numCatalogos = linhas.map(l => l.num_catalogo)
+  const { data: existentes } = await supabase
     .from('nm_resultados')
-    .select('origem')
+    .select('num_catalogo, origem')
     .eq('tipo_campeonato', tipo_campeonato).eq('tipo_marcha', tipo_marcha).eq('categoria', categoria)
-    .eq('tipo_prova', 'final').eq('num_catalogo', num_catalogo)
-    .limit(1)
-  const jaTemOficial = existente?.[0]?.origem === 'abccmm'
+    .eq('tipo_prova', 'final')
+    .in('num_catalogo', numCatalogos)
+  const oficiais = new Set((existentes || []).filter(e => e.origem === 'abccmm').map(e => e.num_catalogo))
+  const ignorados = numCatalogos.filter(n => oficiais.has(n))
 
   const { error } = await supabase.rpc('nm_admin_upsert_resultado_manual', {
-    p_rows: [{
-      tipo_campeonato, tipo_marcha, categoria, num_catalogo,
-      nome_animal: body.nome_animal || null,
-      pontuacao_funcional: body.pontuacao_funcional || null,
-      pontuacao_morfologia: body.pontuacao_morfologia || null,
-      pontuacao_andamento: body.pontuacao_andamento || null,
-      colocacao: body.colocacao || null,
-    }],
+    p_rows: linhas.map(l => ({
+      tipo_campeonato, tipo_marcha, categoria,
+      num_catalogo: l.num_catalogo,
+      nome_animal: l.nome_animal || null,
+      pontuacao_funcional: l.pontuacao_funcional || null,
+      pontuacao_morfologia: l.pontuacao_morfologia || null,
+      pontuacao_andamento: l.pontuacao_andamento || null,
+      colocacao: l.colocacao || null,
+    })),
   })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-  return NextResponse.json({ ok: true, ignorado: jaTemOficial })
+  return NextResponse.json({ ok: true, salvos: linhas.length - ignorados.length, ignorados })
 }
 
 export async function DELETE(req: NextRequest) {
