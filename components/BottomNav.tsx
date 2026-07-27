@@ -36,12 +36,12 @@ export default function BottomNav() {
                   window.dispatchEvent(new Event('nm-ir-ao-vivo'))
                 }
               }}
-              className={`flex flex-col items-center gap-0.5 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+              className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
               </svg>
-              <span className="text-[10px]">{item.label}</span>
+              <span className="text-[10px] truncate max-w-full">{item.label}</span>
             </Link>
           )
         })}

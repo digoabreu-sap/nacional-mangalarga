@@ -25,6 +25,15 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html, body {
+  /* Trava a rolagem horizontal da pagina inteira - se algum elemento algum
+     dia ficar mais largo que a tela (ex: barra inferior com muitos itens),
+     isso evita que o navegador do celular "encolha" a pagina toda pra
+     caber o excesso, o que deixava tudo minusculo em vez de so cortar o
+     que passou da tela. */
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg-primary);
   color: var(--text-primary);
