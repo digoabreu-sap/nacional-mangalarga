@@ -12,7 +12,14 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = data[0]
-  const token = Buffer.from(JSON.stringify({ id: admin.id, email: admin.email, nome: admin.nome, exp: Date.now() + 86400000 })).toString('base64')
+  const token = Buffer.from(JSON.stringify({
+    id: admin.id, email: admin.email, nome: admin.nome,
+    is_master: admin.is_master, permissoes: admin.permissoes || [],
+    exp: Date.now() + 86400000,
+  })).toString('base64')
 
-  return NextResponse.json({ token, admin: { id: admin.id, email: admin.email, nome: admin.nome } })
+  return NextResponse.json({
+    token,
+    admin: { id: admin.id, email: admin.email, nome: admin.nome, is_master: admin.is_master, permissoes: admin.permissoes || [] },
+  })
 }

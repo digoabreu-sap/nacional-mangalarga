@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
+import { decodeAdminToken, temPermissao } from '@/lib/adminAuth'
 
-function verifyToken(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  if (!auth?.startsWith('Bearer ')) return null
-  try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString())
-    if (payload.exp < Date.now()) return null
-    return payload
-  } catch { return null }
+function autorizado(req: NextRequest) {
+  return temPermissao(decodeAdminToken(req), 'categoria')
 }
 
 export async function GET(req: NextRequest) {
-  if (!verifyToken(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+  if (!autorizado(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
 
   const [{ data: atualData }, { data: categoriasData }] = await Promise.all([
     supabase.rpc('nm_get_categoria_atual'),
@@ -32,7 +27,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  if (!verifyToken(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+  if (!autorizado(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
   const { categoria, tipo_marcha } = await req.json()
 
   const { error } = await supabase.rpc('nm_admin_set_categoria_atual', {

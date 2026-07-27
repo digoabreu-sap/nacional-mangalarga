@@ -13,6 +13,7 @@ type ResultadoLinha = {
   pontuacao_morfologia: string | null
   pontuacao_andamento: string | null
   colocacao: string | null
+  origem: string
 }
 
 // Mesmo formato da pagina "Resultado Final" da ABCCMM: Nº, Competidor,
@@ -28,6 +29,7 @@ function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: Resultad
     return oa - ob
   })
   const colunas = 'grid grid-cols-[2rem_1fr_3rem_3rem_3rem_5.5rem] gap-2 items-center px-1'
+  const temManual = ordenadas.some(l => l.origem === 'manual')
 
   return (
     <div className="text-xs overflow-x-auto">
@@ -48,7 +50,7 @@ function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: Resultad
             <span className="text-right text-[var(--text-muted)]">{l.pontuacao_funcional ?? '—'}</span>
             <span className="text-right text-[var(--text-muted)]">{l.pontuacao_morfologia ?? '—'}</span>
             <span className="text-right text-[var(--text-muted)]">{l.pontuacao_andamento ?? '—'}</span>
-            <span className="text-right font-semibold">{formatColocacaoOficial(l.colocacao)}</span>
+            <span className="text-right font-semibold">{formatColocacaoOficial(l.colocacao)}{l.origem === 'manual' ? '*' : ''}</span>
           </>
         )
         return existe ? (
@@ -59,6 +61,7 @@ function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: Resultad
           <div key={i} className={`${colunas} py-1.5 border-b border-[var(--border)] last:border-0 min-w-[26rem]`}>{conteudo}</div>
         )
       })}
+      {temManual && <p className="text-[10px] text-[var(--text-muted)] pt-1.5">* resultado provisório, aguardando confirmação oficial</p>}
     </div>
   )
 }
@@ -78,7 +81,7 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
       const [resultadosRes, animaisRes] = await Promise.all([
         supabase
           .from('nm_resultados')
-          .select('num_catalogo, nome_animal, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, colocacao')
+          .select('num_catalogo, nome_animal, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, colocacao, origem')
           .eq('tipo_campeonato', campeonato.tipo_campeonato)
           .eq('tipo_marcha', campeonato.tipo_marcha)
           .eq('categoria', campeonato.categoria)

@@ -1,26 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { montarEmbedUrl } from '@/lib/youtube'
+import { decodeAdminToken, temPermissao } from '@/lib/adminAuth'
 
-function verifyToken(req: NextRequest) {
-  const auth = req.headers.get('authorization')
-  if (!auth?.startsWith('Bearer ')) return null
-  try {
-    const payload = JSON.parse(Buffer.from(auth.slice(7), 'base64').toString())
-    if (payload.exp < Date.now()) return null
-    return payload
-  } catch { return null }
+function autorizado(req: NextRequest) {
+  return temPermissao(decodeAdminToken(req), 'video')
 }
 
 export async function GET(req: NextRequest) {
-  if (!verifyToken(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+  if (!autorizado(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
   const { data } = await supabase.rpc('nm_get_video_live')
   const status = Array.isArray(data) ? data[0] : data
   return NextResponse.json(status || null)
 }
 
 export async function PUT(req: NextRequest) {
-  if (!verifyToken(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
+  if (!autorizado(req)) return NextResponse.json({ error: 'Nao autorizado' }, { status: 401 })
   const { ativo, fonte_tipo, fonte_valor } = await req.json()
 
   if (ativo && (fonte_tipo !== 'video' && fonte_tipo !== 'canal')) {

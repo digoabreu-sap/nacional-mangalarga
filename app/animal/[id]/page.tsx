@@ -34,6 +34,7 @@ type ResultadoAnimal = {
   pontuacao_funcional: string | null
   pontuacao_morfologia: string | null
   pontuacao_andamento: string | null
+  origem: string
 }
 
 // Mesmo formato do resultado oficial da ABCCMM, com um destaque pra
@@ -46,6 +47,9 @@ function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) 
   }
   return (
     <div>
+      {resultado.origem === 'manual' && (
+        <p className="text-[10px] text-[var(--accent)] text-center mb-2 uppercase tracking-wide font-semibold">Resultado provisório · aguardando confirmação oficial</p>
+      )}
       <div className="grid grid-cols-2 divide-x divide-[var(--border)] text-center">
         <div>
           <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Categoria</p>
@@ -109,7 +113,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
       if (!animal?.num_catalogo) { setResultado(null); return }
       const { data } = await supabase
         .from('nm_resultados')
-        .select('colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento')
+        .select('colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, origem')
         .eq('tipo_campeonato', animal.tipo_campeonato)
         .eq('tipo_marcha', animal.tipo_marcha)
         .eq('categoria', animal.categoria)
