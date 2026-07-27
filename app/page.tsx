@@ -8,6 +8,7 @@ import Link from 'next/link'
 import Banner from '@/components/Banner'
 import BottomNav from '@/components/BottomNav'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
+import { formatColocacaoOficial } from '@/lib/colocacao'
 
 const MARCHAS = [
   { value: 'Todas', label: 'Todas' },
@@ -26,6 +27,7 @@ const selectStyle = {
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
+type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 type Pista = { id: number; categoria: string; tipo_marcha: string | null }
 
 function lerVotosPendentes(): VotoPendente[] {
@@ -88,6 +90,11 @@ function HomeContent() {
   const [votosPorAnimal, setVotosPorAnimal] = useState<Record<number, number>>({})
   const [meuVotoPorCampeonato, setMeuVotoPorCampeonato] = useState<Record<string, number | null>>({})
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
+  const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
+  // Marca os catalogos ja consultados (independente de ter achado resultado
+  // ou nao) pra nao reconsultar toda hora - so o que ainda nao foi tentado
+  // entra na proxima busca em lote.
+  const catalogosConsultadosRef = useRef<Set<string>>(new Set())
   const [animals, setAnimals] = useState<Animal[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -122,6 +129,30 @@ function HomeContent() {
       if (atual?.numero) setWhatsappConfig(atual)
     })
   }, [])
+
+  // Resultado ja divulgado de cada animal visivel na lista, buscado em
+  // lote (so os catalogos ainda nao consultados a cada pagina nova).
+  useEffect(() => {
+    const pendentes = animals
+      .map(a => a.num_catalogo)
+      .filter((n): n is string => !!n && !catalogosConsultadosRef.current.has(n))
+    if (pendentes.length === 0) return
+    pendentes.forEach(n => catalogosConsultadosRef.current.add(n))
+
+    supabase
+      .from('nm_resultados')
+      .select('num_catalogo, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento')
+      .eq('tipo_prova', 'final')
+      .in('num_catalogo', pendentes)
+      .then(({ data }) => {
+        if (!data || data.length === 0) return
+        setResultadosPorCatalogo(prev => {
+          const next = { ...prev }
+          for (const r of data) next[r.num_catalogo] = r
+          return next
+        })
+      })
+  }, [animals])
 
   function abrirWhatsapp(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
@@ -730,6 +761,7 @@ function HomeContent() {
             const votos = votosPorAnimal[animal.id] || 0
             const ehLider = !searchMode && animal.id === liderId
             const jaVotei = !searchMode && animal.campeonato != null && meuVotoPorCampeonato[animal.campeonato] === animal.id
+            const resultado = animal.num_catalogo ? resultadosPorCatalogo[animal.num_catalogo] : undefined
             return (
             <Link
               key={animal.id}
@@ -760,6 +792,11 @@ function HomeContent() {
                   </div>
                   <h3 className="text-sm font-semibold truncate">{animal.nome}</h3>
                   <p className="text-xs text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
+                  {resultado && (
+                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                      Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right flex-shrink-0 flex flex-col items-end gap-1.5">
                   {animal.num_catalogo && (
