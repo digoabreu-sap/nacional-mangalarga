@@ -767,75 +767,84 @@ function HomeContent() {
               key={animal.id}
               href={`/animal/${animal.num_catalogo || animal.id}`}
               onClick={() => trackAnimalClick(animal.id)}
-              className={`block bg-[var(--bg-card)] rounded-xl p-3 border transition-all active:scale-[0.98] ${
+              className={`block bg-[var(--bg-card)] rounded-xl p-4 border transition-all active:scale-[0.98] ${
                 ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                       animal.tipo_marcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
                     }`}>
                       {animal.tipo_marcha === 'MB' ? 'M. Batida' : 'M. Picada'}
                     </span>
                     {(animal.tipo_campeonato === 'Exclusivamente Marcha' || animal.tambem_excl_marcha) && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)]">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)]">
                         Excl. Marcha
                       </span>
                     )}
                     {ehLider && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent)] text-white flex items-center gap-1">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent)] text-white flex items-center gap-1">
                         🏆 Favorito da Torcida
                       </span>
                     )}
                   </div>
-                  <h3 className="text-sm font-semibold truncate">{animal.nome}</h3>
-                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
+                  <h3 className="text-base font-semibold">{animal.nome}</h3>
+                  <p className="text-sm text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
                   {resultado && (
-                    <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                    <p className="text-xs text-[var(--text-muted)] mt-1">
                       Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
                     </p>
                   )}
                 </div>
-                <div className="text-right flex-shrink-0 flex flex-col items-end gap-1.5">
-                  {animal.num_catalogo && (
-                    <div>
-                      <p className="text-[10px] text-[var(--text-muted)] uppercase">Catalogo</p>
-                      <p className="text-2xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
-                    </div>
-                  )}
-                  <div className="flex items-center gap-1.5">
+                {animal.num_catalogo && (
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-xs text-[var(--text-muted)] uppercase">Catalogo</p>
+                    <p className="text-3xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-[var(--border)]">
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-[var(--text-muted)]">
+                  <span className="font-mono">Reg. {animal.registro}</span>
+                  {animal.haras && <span className="text-[var(--accent)]">{animal.haras}</span>}
+                  <span>Pai: {animal.pai || '—'}</span>
+                  <span>Mae: {animal.mae || '—'}</span>
+                </div>
+
+                {/* Botoes de acao ficam separados aqui embaixo (nao mais
+                    colados no canto superior direito, debaixo do numero do
+                    catalogo) - reduz clique acidental de quem rola a lista
+                    com o polegar direito, que naturalmente passa por cima
+                    daquele canto a cada card. */}
+                {(whatsappConfig?.numero || !searchMode) && (
+                  <div className="flex items-center justify-end gap-2 mt-2">
                     {whatsappConfig?.numero && (
                       <button
                         onClick={e => abrirWhatsapp(animal, e)}
                         aria-label="Comprar - falar no WhatsApp"
                         title="Compre - Falar no WhatsApp"
-                        className="flex items-center justify-center w-7 h-7 rounded-full bg-[#25D366] text-white transition-all active:scale-90"
+                        className="flex items-center justify-center w-6 h-6 rounded-full bg-[#25D366] text-white transition-all active:scale-90"
                       >
-                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 004.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2m0 1.67c2.24 0 4.35.87 5.93 2.46a8.23 8.23 0 012.42 5.85c0 4.55-3.7 8.25-8.36 8.25a8.3 8.3 0 01-4.21-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.22 8.22 0 01-1.26-4.39c0-4.55 3.71-8.31 8.27-8.31M8.53 7.33c-.16 0-.43.06-.66.31-.22.25-.86.84-.86 2.05s.88 2.38 1 2.55c.12.16 1.72 2.73 4.29 3.75 2.12.85 2.55.68 3.01.64.46-.05 1.49-.61 1.7-1.19.21-.59.21-1.09.15-1.19-.06-.11-.22-.17-.47-.3-.24-.12-1.48-.73-1.71-.81-.23-.09-.4-.13-.56.13-.17.25-.64.81-.79.98-.14.16-.29.18-.53.06-.25-.13-1.04-.38-1.98-1.22-.73-.65-1.23-1.46-1.37-1.7-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.12-.14.16-.25.24-.41.08-.17.04-.31-.02-.44-.06-.12-.56-1.37-.78-1.87-.2-.48-.4-.42-.56-.42h-.48" /></svg>
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 004.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0012.04 2m0 1.67c2.24 0 4.35.87 5.93 2.46a8.23 8.23 0 012.42 5.85c0 4.55-3.7 8.25-8.36 8.25a8.3 8.3 0 01-4.21-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.22 8.22 0 01-1.26-4.39c0-4.55 3.71-8.31 8.27-8.31M8.53 7.33c-.16 0-.43.06-.66.31-.22.25-.86.84-.86 2.05s.88 2.38 1 2.55c.12.16 1.72 2.73 4.29 3.75 2.12.85 2.55.68 3.01.64.46-.05 1.49-.61 1.7-1.19.21-.59.21-1.09.15-1.19-.06-.11-.22-.17-.47-.3-.24-.12-1.48-.73-1.71-.81-.23-.09-.4-.13-.56.13-.17.25-.64.81-.79.98-.14.16-.29.18-.53.06-.25-.13-1.04-.38-1.98-1.22-.73-.65-1.23-1.46-1.37-1.7-.14-.25-.02-.39.11-.51.11-.11.25-.29.37-.44.12-.14.16-.25.24-.41.08-.17.04-.31-.02-.44-.06-.12-.56-1.37-.78-1.87-.2-.48-.4-.42-.56-.42h-.48" /></svg>
                       </button>
                     )}
                     {!searchMode && (
                       <button
                         onClick={e => votarInline(animal, e)}
                         aria-label={jaVotei ? 'Remover meu voto' : 'Votar neste animal'}
-                        className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all active:scale-90 ${
+                        className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold transition-all active:scale-90 ${
                           jaVotei ? 'bg-[var(--accent)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
                         }`}
                       >
-                        <span>🏆</span>
+                        <span className="text-xs">🏆</span>
                         {votos > 0 && <span>{votos}</span>}
                       </button>
                     )}
                   </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 mt-2 text-[10px] text-[var(--text-muted)]">
-                <span className="font-mono">Reg. {animal.registro}</span>
-                {animal.haras && <span className="text-[var(--accent)] truncate">{animal.haras}</span>}
-                <span className="truncate">Pai: {animal.pai || '—'}</span>
-                <span className="truncate">Mae: {animal.mae || '—'}</span>
+                )}
               </div>
             </Link>
             )

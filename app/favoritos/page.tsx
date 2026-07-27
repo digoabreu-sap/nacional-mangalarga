@@ -76,29 +76,29 @@ export default function Favoritos() {
               <Link
                 key={animal.id}
                 href={`/animal/${animal.num_catalogo || animal.id}`}
-                className="block bg-[var(--bg-card)] rounded-xl p-3 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-all active:scale-[0.98]"
+                className="block bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-all active:scale-[0.98]"
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                         animal.tipo_marcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
                       }`}>
                         {animal.tipo_marcha}
                       </span>
                     </div>
-                    <h3 className="text-sm font-semibold truncate">{animal.nome}</h3>
-                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
+                    <h3 className="text-base font-semibold">{animal.nome}</h3>
+                    <p className="text-sm text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
                     {resultado && (
-                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                      <p className="text-xs text-[var(--text-muted)] mt-1">
                         Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
                       </p>
                     )}
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-[10px] text-[var(--text-muted)] font-mono">Reg. {animal.registro}</p>
+                    <p className="text-xs text-[var(--text-muted)] font-mono">Reg. {animal.registro}</p>
                     {animal.haras && (
-                      <p className="text-[10px] text-[var(--accent)] mt-0.5 max-w-[120px] truncate">{animal.haras}</p>
+                      <p className="text-xs text-[var(--accent)] mt-0.5 max-w-[120px]">{animal.haras}</p>
                     )}
                   </div>
                 </div>
