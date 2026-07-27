@@ -369,84 +369,98 @@ function VideoPanel({ token }: { token: string }) {
   )
 }
 
+type Pista = { id: number; categoria: string | null; tipo_marcha: string | null }
+
 function CategoriaPanel({ token }: { token: string }) {
   const [categorias, setCategorias] = useState<string[]>([])
-  const [current, setCurrent] = useState<string | null>(null)
-  const [currentMarcha, setCurrentMarcha] = useState<string | null>(null)
-  const [selected, setSelected] = useState('')
-  const [selectedMarcha, setSelectedMarcha] = useState<'MB' | 'MP'>('MB')
+  const [pistas, setPistas] = useState<Pista[]>([])
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
 
   const load = useCallback(async () => {
     const res = await fetch('/api/admin/categoria-atual', { headers: { 'Authorization': `Bearer ${token}` } })
     const data = await res.json()
     setCategorias(data.categorias || [])
-    setCurrent(data.categoria || null)
-    setCurrentMarcha(data.tipo_marcha || null)
-    setSelected(data.categoria || '')
-    setSelectedMarcha(data.tipo_marcha || 'MB')
+    setPistas(data.pistas || [])
     setLoading(false)
   }, [token])
 
   useEffect(() => { load() }, [load])
 
-  async function save() {
-    setSaving(true)
-    setMsg('')
+  async function salvarPista(id: number, categoria: string, tipoMarcha: 'MB' | 'MP') {
     const res = await fetch('/api/admin/categoria-atual', {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoria: selected || null, tipo_marcha: selected ? selectedMarcha : null }),
+      body: JSON.stringify({ id, categoria: categoria || null, tipo_marcha: categoria ? tipoMarcha : null }),
     })
-    setSaving(false)
-    if (res.ok) {
-      setCurrent(selected || null)
-      setCurrentMarcha(selected ? selectedMarcha : null)
-      setMsg('Categoria em andamento atualizada!')
-      setTimeout(() => setMsg(''), 3000)
-    } else {
-      setMsg('Erro ao salvar')
-    }
+    if (res.ok) await load()
+    return res.ok
   }
 
   if (loading) return <div className="text-center py-8"><div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mx-auto" /></div>
 
-  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] appearance-none"
-
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">Categoria em Andamento</h3>
-      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
-        <p className="text-xs text-[var(--text-muted)]">
-          Agora na pista: <span className="text-[var(--accent)] font-semibold">
-            {current ? `${current} (${currentMarcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'})` : 'Nenhuma configurada'}
-          </span>
-        </p>
-        <select value={selected} onChange={e => setSelected(e.target.value)} className={inputClass}>
-          <option value="">Nenhuma</option>
-          {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <div className="flex gap-1 bg-[var(--bg-primary)] rounded-lg p-0.5">
-          {(['MB', 'MP'] as const).map(m => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setSelectedMarcha(m)}
-              className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                selectedMarcha === m ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]'
-              }`}
-            >
-              {m === 'MB' ? 'Marcha Batida' : 'Marcha Picada'}
-            </button>
-          ))}
-        </div>
-        {msg && <p className="text-sm text-green-400">{msg}</p>}
-        <button onClick={save} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
-          {saving ? 'Salvando...' : 'Salvar'}
-        </button>
+      <p className="text-xs text-[var(--text-muted)]">
+        Configure ate 2 categorias ao mesmo tempo (2 rings julgando em paralelo). Quando as duas estiverem preenchidas, o visitante ve as duas no topo do site e escolhe entre elas quando quiser.
+      </p>
+      {pistas.map(pista => (
+        <PistaBlock key={pista.id} pista={pista} categorias={categorias} onSave={salvarPista} />
+      ))}
+    </div>
+  )
+}
+
+function PistaBlock({ pista, categorias, onSave }: {
+  pista: Pista
+  categorias: string[]
+  onSave: (id: number, categoria: string, marcha: 'MB' | 'MP') => Promise<boolean>
+}) {
+  const [selected, setSelected] = useState(pista.categoria || '')
+  const [selectedMarcha, setSelectedMarcha] = useState<'MB' | 'MP'>((pista.tipo_marcha as 'MB' | 'MP') || 'MB')
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] appearance-none"
+
+  async function save() {
+    setSaving(true)
+    setMsg('')
+    const ok = await onSave(pista.id, selected, selectedMarcha)
+    setSaving(false)
+    setMsg(ok ? 'Atualizada!' : 'Erro ao salvar')
+    if (ok) setTimeout(() => setMsg(''), 3000)
+  }
+
+  return (
+    <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
+      <p className="text-xs text-[var(--text-muted)]">
+        Pista {pista.id} — <span className="text-[var(--accent)] font-semibold">
+          {pista.categoria ? `${pista.categoria} (${pista.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'})` : 'Nenhuma configurada'}
+        </span>
+      </p>
+      <select value={selected} onChange={e => setSelected(e.target.value)} className={inputClass}>
+        <option value="">Nenhuma</option>
+        {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+      </select>
+      <div className="flex gap-1 bg-[var(--bg-primary)] rounded-lg p-0.5">
+        {(['MB', 'MP'] as const).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setSelectedMarcha(m)}
+            className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              selectedMarcha === m ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]'
+            }`}
+          >
+            {m === 'MB' ? 'Marcha Batida' : 'Marcha Picada'}
+          </button>
+        ))}
       </div>
+      {msg && <p className="text-sm text-green-400">{msg}</p>}
+      <button onClick={save} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+        {saving ? 'Salvando...' : 'Salvar'}
+      </button>
     </div>
   )
 }

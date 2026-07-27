@@ -6,30 +6,33 @@ import { supabase, Animal } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 
 type AnimalLista = Pick<Animal, 'id' | 'nome' | 'num_catalogo' | 'haras' | 'campeonato'>
+type Pista = { id: number; categoria: string; tipo_marcha: string | null }
 
 // Botao flutuante global (fica no layout raiz, como o video ao vivo) pra
 // votar no favorito da categoria em pista de qualquer tela do site, sem
 // precisar voltar pra Home. Some sozinho se nao houver categoria configurada
-// no admin, e na Home (que ja tem a lista com voto inline na tela).
+// no admin, e na Home (que ja tem a lista com voto inline na tela). Quando
+// ha 2 pistas simultaneas, o painel ganha um seletor pra trocar entre elas.
 export default function VotoFlutuante() {
   const pathname = usePathname()
   const { user, ensureUser } = useAuth()
-  const [categoriaAtual, setCategoriaAtual] = useState<string | null>(null)
-  const [marchaAtual, setMarchaAtual] = useState<string | null>(null)
+  const [pistas, setPistas] = useState<Pista[]>([])
+  const [pistaSelecionadaId, setPistaSelecionadaId] = useState<number | null>(null)
   const [aberto, setAberto] = useState(false)
   const [animais, setAnimais] = useState<AnimalLista[]>([])
   const [votos, setVotos] = useState<Record<number, number>>({})
   const [meuVoto, setMeuVoto] = useState<Record<string, number | null>>({})
   const votandoRef = useRef(false)
 
+  const categoriaAtual = pistas.find(p => p.id === pistaSelecionadaId)?.categoria || null
+  const marchaAtual = pistas.find(p => p.id === pistaSelecionadaId)?.tipo_marcha || null
+
   useEffect(() => {
     async function carregar() {
       const { data } = await supabase.rpc('nm_get_categoria_atual')
-      const atual = Array.isArray(data) ? data[0] : data
-      if (atual?.categoria) {
-        setCategoriaAtual(atual.categoria)
-        setMarchaAtual(atual.tipo_marcha || null)
-      }
+      const novasPistas: Pista[] = Array.isArray(data) ? data.filter((p: Pista) => p.categoria) : []
+      setPistas(novasPistas)
+      setPistaSelecionadaId(prev => (prev !== null && novasPistas.some(p => p.id === prev)) ? prev : (novasPistas[0]?.id ?? null))
     }
     carregar()
 
@@ -135,14 +138,33 @@ export default function VotoFlutuante() {
             className="w-full max-w-2xl max-h-[70vh] bg-[var(--bg-primary)] rounded-t-2xl overflow-hidden flex flex-col safe-bottom"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] flex-shrink-0">
-              <div>
-                <p className="text-xs font-bold text-[var(--accent)] uppercase tracking-wide">Vote no favorito</p>
-                <p className="text-sm font-semibold">{categoriaAtual}{marchaAtual ? ` · ${marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}</p>
+            <div className="px-4 py-3 border-b border-[var(--border)] flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-[var(--accent)] uppercase tracking-wide">Vote no favorito</p>
+                  <p className="text-sm font-semibold truncate">{categoriaAtual}{marchaAtual ? ` · ${marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}</p>
+                </div>
+                <button onClick={() => setAberto(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 flex-shrink-0">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
               </div>
-              <button onClick={() => setAberto(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
+              {pistas.length > 1 && (
+                <div className="flex gap-1.5 mt-2">
+                  {pistas.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setPistaSelecionadaId(p.id)}
+                      className={`flex-1 min-w-0 rounded-lg px-2 py-1 text-[11px] font-semibold truncate transition-colors ${
+                        pistaSelecionadaId === p.id
+                          ? 'bg-[var(--accent)] text-white'
+                          : 'bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-secondary)]'
+                      }`}
+                    >
+                      {p.categoria}{p.tipo_marcha ? ` · ${p.tipo_marcha}` : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-2 space-y-1.5">

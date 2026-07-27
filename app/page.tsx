@@ -26,6 +26,7 @@ const selectStyle = {
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
+type Pista = { id: number; categoria: string; tipo_marcha: string | null }
 
 function lerVotosPendentes(): VotoPendente[] {
   try { return JSON.parse(localStorage.getItem(PENDENTES_KEY) || '[]') } catch { return [] }
@@ -64,11 +65,17 @@ function HomeContent() {
   const [search, setSearch] = useState('')
   const [marcha, setMarcha] = useState<string>('Todas')
   const [categoria, setCategoria] = useState<string>('Todas')
+  // Ate 2 "pistas" (rings) podem estar em julgamento ao mesmo tempo - o
+  // usuario escolhe qual acompanhar quando ha 2 configuradas. categoriaAtual/
+  // marchaAtual sempre refletem a pista atualmente selecionada, entao toda a
+  // logica de filtro/voto que ja dependia delas continua igual.
+  const [pistas, setPistas] = useState<Pista[]>([])
+  const [pistaSelecionadaId, setPistaSelecionadaId] = useState<number | null>(null)
   const [categoriaAtual, setCategoriaAtual] = useState<string | null>(null)
   const [marchaAtual, setMarchaAtual] = useState<string | null>(null)
   const [categoriaAtualCarregada, setCategoriaAtualCarregada] = useState(false)
   const [categoriaToast, setCategoriaToast] = useState<string | null>(null)
-  const categoriaRef = useRef<{ categoria: string | null; marcha: string | null }>({ categoria: null, marcha: null })
+  const pistasRef = useRef<Pista[]>([])
   // Enquanto um voto esta em andamento, evita que a hidratacao de "meu voto"
   // (disparada pela mudanca de `user` quando cria o cadastro anonimo na
   // hora) sobrescreva a atualizacao otimista com dados ainda desatualizados.
@@ -124,24 +131,29 @@ function HomeContent() {
     loadFilters()
   }, [])
 
-  // Busca a categoria em pista; se `avisar` for true e o valor mudou desde a
-  // ultima vez, mostra um toast (usado quando o admin troca a categoria com
-  // a pagina ja aberta - detectado via realtime abaixo).
+  // Busca as pistas em julgamento (0-2); se `avisar` for true e alguma
+  // mudou desde a ultima vez, mostra um toast (usado quando o admin troca a
+  // categoria com a pagina ja aberta - detectado via realtime abaixo).
   const carregarCategoriaAtual = useCallback(async (avisar: boolean) => {
     const { data, error } = await supabase.rpc('nm_get_categoria_atual')
-    const atual = Array.isArray(data) ? data[0] : data
-    if (!error && atual?.categoria) {
-      const mudou = avisar && (categoriaRef.current.categoria !== atual.categoria || categoriaRef.current.marcha !== atual.tipo_marcha)
-      categoriaRef.current = { categoria: atual.categoria, marcha: atual.tipo_marcha || null }
-      setCategoriaAtual(atual.categoria)
-      setMarchaAtual(atual.tipo_marcha || null)
-      if (mudou) {
-        const label = `Agora na pista: ${atual.categoria}${atual.tipo_marcha ? ` · ${atual.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}`
-        setCategoriaToast(label)
-        setTimeout(() => setCategoriaToast(null), 6000)
+    const novasPistas: Pista[] = !error && Array.isArray(data) ? data.filter((p: Pista) => p.categoria) : []
+
+    if (avisar) {
+      for (const p of novasPistas) {
+        const antiga = pistasRef.current.find(x => x.id === p.id)
+        if (!antiga || antiga.categoria !== p.categoria || antiga.tipo_marcha !== p.tipo_marcha) {
+          const prefixo = novasPistas.length > 1 ? `Pista ${p.id}: ` : ''
+          const label = `Agora na pista: ${prefixo}${p.categoria}${p.tipo_marcha ? ` · ${p.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}`
+          setCategoriaToast(label)
+          setTimeout(() => setCategoriaToast(null), 6000)
+          break // so 1 toast por vez, mesmo que as 2 pistas mudem juntas
+        }
       }
-    } else {
-      categoriaRef.current = { categoria: null, marcha: null }
+    }
+    pistasRef.current = novasPistas
+    setPistas(novasPistas)
+
+    if (novasPistas.length === 0) {
       // Sem categoria configurada no admin - nao ha o que travar, cai pra
       // busca livre no catalogo inteiro.
       setSearchMode(true)
@@ -159,6 +171,20 @@ function HomeContent() {
 
     return () => { supabase.removeChannel(canal) }
   }, [carregarCategoriaAtual])
+
+  // Mantem a pista selecionada valida (some se a categoria foi limpa, ou
+  // escolhe a primeira disponivel se ainda nao ha selecao).
+  useEffect(() => {
+    if (pistas.length === 0) { setPistaSelecionadaId(null); return }
+    setPistaSelecionadaId(prev => (prev !== null && pistas.some(p => p.id === prev)) ? prev : pistas[0].id)
+  }, [pistas])
+
+  // categoriaAtual/marchaAtual sempre refletem a pista selecionada.
+  useEffect(() => {
+    const p = pistas.find(x => x.id === pistaSelecionadaId) || null
+    setCategoriaAtual(p?.categoria || null)
+    setMarchaAtual(p?.tipo_marcha || null)
+  }, [pistas, pistaSelecionadaId])
 
   // Enquanto travado na pista, a categoria/marcha do filtro sempre acompanha
   // a "categoria em pista" atual - o usuario nao escolhe.
@@ -514,11 +540,30 @@ function HomeContent() {
           <Banner posicao="topo" />
 
           {!searchMode && categoriaAtual && (
-            <div className="mb-1 bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-xl px-4 py-3 text-center">
-              <p className="text-[10px] text-[var(--accent)] uppercase tracking-wide font-semibold">Agora na Pista</p>
-              <p className="text-base font-bold text-[var(--text-primary)] mt-0.5">
-                {categoriaAtual}{marchaAtual && <span className="text-[var(--accent)]"> · {marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}</span>}
-              </p>
+            <div className="mb-1 space-y-1.5">
+              {pistas.length > 1 && (
+                <div className="flex gap-1.5">
+                  {pistas.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setPistaSelecionadaId(p.id)}
+                      className={`flex-1 min-w-0 rounded-lg px-2 py-1.5 text-[11px] font-semibold truncate transition-colors ${
+                        pistaSelecionadaId === p.id
+                          ? 'bg-[var(--accent)] text-white'
+                          : 'bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-secondary)]'
+                      }`}
+                    >
+                      {p.categoria}{p.tipo_marcha ? ` · ${p.tipo_marcha}` : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-xl px-4 py-3 text-center">
+                <p className="text-[10px] text-[var(--accent)] uppercase tracking-wide font-semibold">Agora na Pista</p>
+                <p className="text-base font-bold text-[var(--text-primary)] mt-0.5">
+                  {categoriaAtual}{marchaAtual && <span className="text-[var(--accent)]"> · {marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}</span>}
+                </p>
+              </div>
             </div>
           )}
 
