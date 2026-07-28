@@ -371,7 +371,14 @@ function VideoPanel({ token }: { token: string }) {
   )
 }
 
-type Pista = { id: number; categoria: string | null; tipo_marcha: string | null }
+type Pista = { id: number; categoria: string | null; tipo_marcha: string | null; fase_julgamento: string | null }
+const FASES_JULGAMENTO = [
+  { value: '', label: 'Nenhuma' },
+  { value: 'morfologia', label: 'Morfologia' },
+  { value: 'marcha', label: 'Marcha' },
+  { value: 'funcional', label: 'Prova Funcional' },
+] as const
+const FASE_LABEL: Record<string, string> = { morfologia: 'Morfologia', marcha: 'Marcha', funcional: 'Prova Funcional' }
 
 function CategoriaPanel({ token }: { token: string }) {
   const [categorias, setCategorias] = useState<string[]>([])
@@ -388,11 +395,11 @@ function CategoriaPanel({ token }: { token: string }) {
 
   useEffect(() => { load() }, [load])
 
-  async function salvarPista(id: number, categoria: string, tipoMarcha: 'MB' | 'MP') {
+  async function salvarPista(id: number, categoria: string, tipoMarcha: 'MB' | 'MP', fase: string) {
     const res = await fetch('/api/admin/categoria-atual', {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, categoria: categoria || null, tipo_marcha: categoria ? tipoMarcha : null }),
+      body: JSON.stringify({ id, categoria: categoria || null, tipo_marcha: categoria ? tipoMarcha : null, fase_julgamento: categoria ? (fase || null) : null }),
     })
     if (res.ok) await load()
     return res.ok
@@ -416,10 +423,11 @@ function CategoriaPanel({ token }: { token: string }) {
 function PistaBlock({ pista, categorias, onSave }: {
   pista: Pista
   categorias: string[]
-  onSave: (id: number, categoria: string, marcha: 'MB' | 'MP') => Promise<boolean>
+  onSave: (id: number, categoria: string, marcha: 'MB' | 'MP', fase: string) => Promise<boolean>
 }) {
   const [selected, setSelected] = useState(pista.categoria || '')
   const [selectedMarcha, setSelectedMarcha] = useState<'MB' | 'MP'>((pista.tipo_marcha as 'MB' | 'MP') || 'MB')
+  const [selectedFase, setSelectedFase] = useState(pista.fase_julgamento || '')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [busca, setBusca] = useState('')
@@ -432,7 +440,7 @@ function PistaBlock({ pista, categorias, onSave }: {
   async function save() {
     setSaving(true)
     setMsg('')
-    const ok = await onSave(pista.id, selected, selectedMarcha)
+    const ok = await onSave(pista.id, selected, selectedMarcha, selectedFase)
     setSaving(false)
     setMsg(ok ? 'Atualizada!' : 'Erro ao salvar')
     if (ok) setTimeout(() => setMsg(''), 3000)
@@ -442,7 +450,9 @@ function PistaBlock({ pista, categorias, onSave }: {
     <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
       <p className="text-xs text-[var(--text-muted)]">
         Pista {pista.id} — <span className="text-[var(--accent)] font-semibold">
-          {pista.categoria ? `${pista.categoria} (${pista.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'})` : 'Nenhuma configurada'}
+          {pista.categoria
+            ? `${pista.categoria} (${pista.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'})${pista.fase_julgamento ? ` · ${FASE_LABEL[pista.fase_julgamento]}` : ''}`
+            : 'Nenhuma configurada'}
         </span>
       </p>
       <input
@@ -469,6 +479,23 @@ function PistaBlock({ pista, categorias, onSave }: {
             {m === 'MB' ? 'Marcha Batida' : 'Marcha Picada'}
           </button>
         ))}
+      </div>
+      <div>
+        <label className="text-xs text-[var(--text-muted)] block mb-1">Quesito sendo julgado agora</label>
+        <div className="grid grid-cols-2 gap-1 bg-[var(--bg-primary)] rounded-lg p-0.5">
+          {FASES_JULGAMENTO.map(f => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setSelectedFase(f.value)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                selectedFase === f.value ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)]'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
       {msg && <p className="text-sm text-green-400">{msg}</p>}
       <button onClick={save} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">

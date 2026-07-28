@@ -6,7 +6,8 @@ import { supabase, Animal } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 
 type AnimalLista = Pick<Animal, 'id' | 'nome' | 'num_catalogo' | 'haras' | 'campeonato'>
-type Pista = { id: number; categoria: string; tipo_marcha: string | null }
+type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null }
+const FASE_LABEL: Record<string, string> = { morfologia: 'Morfologia', marcha: 'Marcha', funcional: 'Prova Funcional' }
 
 // Botao flutuante global (fica no layout raiz, como o video ao vivo) pra
 // votar no favorito da categoria em pista de qualquer tela do site, sem
@@ -26,6 +27,7 @@ export default function VotoFlutuante() {
 
   const categoriaAtual = pistas.find(p => p.id === pistaSelecionadaId)?.categoria || null
   const marchaAtual = pistas.find(p => p.id === pistaSelecionadaId)?.tipo_marcha || null
+  const faseAtual = pistas.find(p => p.id === pistaSelecionadaId)?.fase_julgamento || null
 
   useEffect(() => {
     async function carregar() {
@@ -143,6 +145,9 @@ export default function VotoFlutuante() {
                 <div className="min-w-0">
                   <p className="text-xs font-bold text-[var(--accent)] uppercase tracking-wide">Vote no favorito</p>
                   <p className="text-sm font-semibold truncate">{categoriaAtual}{marchaAtual ? ` · ${marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}</p>
+                  {faseAtual && FASE_LABEL[faseAtual] && (
+                    <p className="text-[10px] text-[var(--accent-dark)] font-semibold truncate">Julgamento de {FASE_LABEL[faseAtual]}</p>
+                  )}
                 </div>
                 <button onClick={() => setAberto(false)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 flex-shrink-0">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>

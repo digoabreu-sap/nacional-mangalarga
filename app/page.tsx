@@ -25,7 +25,8 @@ const PENDENTES_KEY = 'nm_votos_pendentes'
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
-type Pista = { id: number; categoria: string; tipo_marcha: string | null }
+type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null }
+const FASE_LABEL: Record<string, string> = { morfologia: 'Morfologia', marcha: 'Marcha', funcional: 'Prova Funcional' }
 
 function lerVotosPendentes(): VotoPendente[] {
   try { return JSON.parse(localStorage.getItem(PENDENTES_KEY) || '[]') } catch { return [] }
@@ -78,6 +79,7 @@ function HomeContent() {
   const [pistaSelecionadaId, setPistaSelecionadaId] = useState<number | null>(null)
   const [categoriaAtual, setCategoriaAtual] = useState<string | null>(null)
   const [marchaAtual, setMarchaAtual] = useState<string | null>(null)
+  const [faseAtual, setFaseAtual] = useState<string | null>(null)
   const [categoriaAtualCarregada, setCategoriaAtualCarregada] = useState(false)
   const [categoriaToast, setCategoriaToast] = useState<string | null>(null)
   const pistasRef = useRef<Pista[]>([])
@@ -205,9 +207,10 @@ function HomeContent() {
     if (avisar) {
       for (const p of novasPistas) {
         const antiga = pistasRef.current.find(x => x.id === p.id)
-        if (!antiga || antiga.categoria !== p.categoria || antiga.tipo_marcha !== p.tipo_marcha) {
+        if (!antiga || antiga.categoria !== p.categoria || antiga.tipo_marcha !== p.tipo_marcha || antiga.fase_julgamento !== p.fase_julgamento) {
           const prefixo = novasPistas.length > 1 ? `Pista ${p.id}: ` : ''
-          const label = `Agora na pista: ${prefixo}${p.categoria}${p.tipo_marcha ? ` · ${p.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}`
+          const fase = p.fase_julgamento && FASE_LABEL[p.fase_julgamento] ? ` · Julgamento de ${FASE_LABEL[p.fase_julgamento]}` : ''
+          const label = `Agora na pista: ${prefixo}${p.categoria}${p.tipo_marcha ? ` · ${p.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}` : ''}${fase}`
           setCategoriaToast(label)
           setTimeout(() => setCategoriaToast(null), 6000)
           break // so 1 toast por vez, mesmo que as 2 pistas mudem juntas
@@ -243,11 +246,12 @@ function HomeContent() {
     setPistaSelecionadaId(prev => (prev !== null && pistas.some(p => p.id === prev)) ? prev : pistas[0].id)
   }, [pistas])
 
-  // categoriaAtual/marchaAtual sempre refletem a pista selecionada.
+  // categoriaAtual/marchaAtual/faseAtual sempre refletem a pista selecionada.
   useEffect(() => {
     const p = pistas.find(x => x.id === pistaSelecionadaId) || null
     setCategoriaAtual(p?.categoria || null)
     setMarchaAtual(p?.tipo_marcha || null)
+    setFaseAtual(p?.fase_julgamento || null)
   }, [pistas, pistaSelecionadaId])
 
   // Enquanto travado na pista, a categoria/marcha do filtro sempre acompanha
@@ -627,6 +631,11 @@ function HomeContent() {
                 <p className="text-base font-bold text-[var(--text-primary)] mt-0.5">
                   {categoriaAtual}{marchaAtual && <span className="text-[var(--accent)]"> · {marchaAtual === 'MP' ? 'Marcha Picada' : 'Marcha Batida'}</span>}
                 </p>
+                {faseAtual && FASE_LABEL[faseAtual] && (
+                  <p className="text-xs font-semibold text-[var(--accent-dark)] mt-1">
+                    Julgamento de {FASE_LABEL[faseAtual]}
+                  </p>
+                )}
               </div>
             </div>
           )}
