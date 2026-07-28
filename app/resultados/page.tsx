@@ -6,6 +6,7 @@ import { supabase, Campeonato } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
 import { normalizarColocacao, formatColocacaoOficial } from '@/lib/colocacao'
+import { calcularCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 type ResultadoLinha = {
   num_catalogo: string
@@ -67,7 +68,7 @@ function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: Resultad
   )
 }
 
-function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
+function CategoriaResultado({ campeonato, categoriasMistas }: { campeonato: Campeonato; categoriasMistas: Set<string> }) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [linhas, setLinhas] = useState<ResultadoLinha[]>([])
@@ -122,7 +123,7 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
               {campeonato.tipo_marcha}
             </span>
             <span className="text-sm font-medium truncate">{campeonato.categoria}</span>
-            {campeonato.tipo_campeonato && campeonato.tipo_campeonato !== 'Convencional' && (
+            {ehExcecaoMarcha(campeonato.categoria, campeonato.tipo_marcha, campeonato.tipo_campeonato, categoriasMistas) && (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
                 Excl. Marcha
               </span>
@@ -181,6 +182,7 @@ export default function ResultadosPage() {
   // ou so em marcha) - por isso nao agrupamos mais por secao. A lista fica
   // achatada e o usuario filtra pela categoria de verdade pelo combobox.
   const categoriasDisponiveis = [...new Set(campeonatos.map(c => c.categoria))].sort()
+  const categoriasMistas = calcularCategoriasMistas(campeonatos)
   const visiveis = filterCategoria === 'Todas'
     ? campeonatos
     : campeonatos.filter(c => c.categoria === filterCategoria)
@@ -227,7 +229,7 @@ export default function ResultadosPage() {
         ) : visiveis.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)] text-center py-8">Nenhuma categoria encontrada</p>
         ) : (
-          visiveis.map(c => <CategoriaResultado key={c.id} campeonato={c} />)
+          visiveis.map(c => <CategoriaResultado key={c.id} campeonato={c} categoriasMistas={categoriasMistas} />)
         )}
       </div>
 

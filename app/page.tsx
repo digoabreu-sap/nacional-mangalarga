@@ -8,8 +8,10 @@ import Link from 'next/link'
 import Banner from '@/components/Banner'
 import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
+import CampeaoCampeonatoBanner from '@/components/CampeaoCampeonatoBanner'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial } from '@/lib/colocacao'
+import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 const MARCHAS = [
   { value: 'Todas', label: 'Todas' },
@@ -86,6 +88,7 @@ function HomeContent() {
   const [meuVotoPorCampeonato, setMeuVotoPorCampeonato] = useState<Record<string, number | null>>({})
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
+  const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
   // Marca os catalogos ja consultados (independente de ter achado resultado
   // ou nao) pra nao reconsultar toda hora - so o que ainda nao foi tentado
   // entra na proxima busca em lote.
@@ -123,6 +126,10 @@ function HomeContent() {
       const atual = Array.isArray(data) ? data[0] : data
       if (atual?.numero) setWhatsappConfig(atual)
     })
+  }, [])
+
+  useEffect(() => {
+    getCategoriasMistas().then(setCategoriasMistas)
   }, [])
 
   // Resultado ja divulgado de cada animal visivel na lista, buscado em
@@ -746,6 +753,7 @@ function HomeContent() {
       </div>
 
       <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full">
+        {campeonatoFilter && <CampeaoCampeonatoBanner campeonatoNome={campeonatoFilter} />}
         <div className="space-y-2">
           {animals.map(animal => {
             const votos = votosPorAnimal[animal.id] || 0
@@ -769,7 +777,7 @@ function HomeContent() {
                     }`}>
                       {animal.tipo_marcha === 'MB' ? 'M. Batida' : 'M. Picada'}
                     </span>
-                    {(animal.tipo_campeonato === 'Exclusivamente Marcha' || animal.tambem_excl_marcha) && (
+                    {(ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) || animal.tambem_excl_marcha) && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)]">
                         Excl. Marcha
                       </span>

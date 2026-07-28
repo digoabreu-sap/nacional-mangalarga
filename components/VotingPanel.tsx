@@ -23,19 +23,24 @@ export default function VotingPanel({ animalId, campeonato }: { animalId: number
   const votandoRef = useRef(false)
 
   useEffect(() => {
+    if (!campeonato) return
     loadRanking()
     if (user && !votandoRef.current) loadMyVote()
     loadResultadoOficial()
   }, [campeonato, user])
 
   async function loadRanking() {
+    if (!campeonato) return
     const { data } = await supabase.rpc('nm_ranking_simples', { p_campeonato: campeonato })
     setRanking(data || [])
   }
 
   // Compara o favorito da torcida com o campeao oficial, quando o resultado
-  // ja saiu. campeonato vem como "TipoCampeonato - Marcha - Categoria".
+  // ja saiu. campeonato vem como "TipoCampeonato - Marcha - Categoria". Se o
+  // dado do animal vier sem campeonato (falha de raspagem), so ignora - nao
+  // deixa a pagina inteira quebrar por causa do painel de votacao.
   async function loadResultadoOficial() {
+    if (!campeonato) { setResultadoOficial(null); return }
     const partes = campeonato.split(' - ')
     if (partes.length < 3) { setResultadoOficial(null); return }
     const [tipoCampeonato, tipoMarcha, ...resto] = partes

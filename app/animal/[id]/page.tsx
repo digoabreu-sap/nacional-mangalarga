@@ -3,11 +3,13 @@
 import { useState, useEffect, use, useMemo } from 'react'
 import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import BottomNav from '@/components/BottomNav'
 import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
+import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
@@ -71,17 +73,23 @@ function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) 
 
 export default function AnimalDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
+  const router = useRouter()
   const [animal, setAnimal] = useState<Animal | null>(null)
   const [loading, setLoading] = useState(true)
   const [isFav, setIsFav] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAnimal | null>(null)
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
+  const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     supabase.rpc('nm_get_whatsapp_config').then(({ data }) => {
       const atual = Array.isArray(data) ? data[0] : data
       if (atual?.numero) setWhatsappConfig(atual)
     })
+  }, [])
+
+  useEffect(() => {
+    getCategoriasMistas().then(setCategoriasMistas)
   }, [])
 
   useEffect(() => {
@@ -135,6 +143,14 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
 
   const schedule = useMemo(() => (animal ? getAnimalSchedule(animal) : []), [animal])
 
+  // Sempre volta pra pagina anterior de verdade (preservando filtro de
+  // campeonato, busca, scroll, etc.) em vez de um link fixo pra "/" que jogava
+  // fora o contexto de quem chegou aqui via Campeonatos ou busca filtrada.
+  function voltar() {
+    if (typeof window !== 'undefined' && window.history.length > 1) router.back()
+    else router.push('/')
+  }
+
   function toggleFav() {
     if (!animal) return
     const favs: number[] = JSON.parse(localStorage.getItem('nm_favoritos') || '[]')
@@ -163,17 +179,19 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
     </div>
   )
 
+  const mostrarExclMarcha = ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) || animal.tambem_excl_marcha
+
   return (
     <main className="flex flex-col min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-b border-[var(--border)] px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center gap-3">
-          <Link href="/" className="text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+          <button onClick={voltar} className="text-[var(--text-muted)] hover:text-[var(--text-primary)]" aria-label="Voltar">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-          </Link>
+          </button>
           <div className="flex-1 min-w-0">
             <h1 className="text-sm font-bold truncate">{animal.nome}</h1>
-            <p className="text-[10px] text-[var(--text-muted)]">{animal.categoria}{(animal.tipo_campeonato === 'Exclusivamente Marcha' || animal.tambem_excl_marcha) ? ' · Excl. Marcha' : ''}</p>
+            <p className="text-[10px] text-[var(--text-muted)]">{animal.categoria}{mostrarExclMarcha ? ' · Excl. Marcha' : ''}</p>
           </div>
         </div>
       </header>
@@ -189,7 +207,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
                 }`}>
                   {animal.tipo_marcha === 'MB' ? 'Marcha Batida' : 'Marcha Picada'}
                 </span>
-                {(animal.tipo_campeonato === 'Exclusivamente Marcha' || animal.tambem_excl_marcha) && (
+                {mostrarExclMarcha && (
                   <span className="text-xs font-bold px-2 py-1 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)]">
                     Excl. Marcha
                   </span>

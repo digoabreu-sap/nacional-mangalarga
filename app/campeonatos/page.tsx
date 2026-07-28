@@ -5,6 +5,7 @@ import { supabase, Campeonato } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
+import { calcularCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 export default function Campeonatos() {
   const [campeonatos, setCampeonatos] = useState<Campeonato[]>([])
@@ -38,6 +39,7 @@ export default function Campeonatos() {
   const visiveis = filterCategoria === 'Todas'
     ? campeonatos
     : campeonatos.filter(c => c.categoria === filterCategoria)
+  const categoriasMistas = calcularCategoriasMistas(campeonatos)
 
   return (
     <main className="flex flex-col min-h-screen">
@@ -92,7 +94,7 @@ export default function Campeonatos() {
                       {c.tipo_marcha}
                     </span>
                     <span className="text-sm font-medium truncate">{c.categoria}</span>
-                    {c.tipo_campeonato && c.tipo_campeonato !== 'Convencional' && (
+                    {ehExcecaoMarcha(c.categoria, c.tipo_marcha, c.tipo_campeonato, categoriasMistas) && (
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
                         Excl. Marcha
                       </span>

@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import RankingDestaques from '@/components/RankingDestaques'
+import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 type RankingItem = { id: number; nome: string; registro: string; haras: string; num_catalogo: number; total_votos: number }
 type CampeonatoRanking = { campeonato: string; ranking: RankingItem[] }
@@ -29,6 +30,11 @@ export default function RankingPage() {
   const [rankings, setRankings] = useState<CampeonatoRanking[]>([])
   const [loading, setLoading] = useState(true)
   const [filterMarcha, setFilterMarcha] = useState<string>('Todas')
+  const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    getCategoriasMistas().then(setCategoriasMistas)
+  }, [])
 
   useEffect(() => {
     async function load() {
@@ -137,7 +143,7 @@ export default function RankingPage() {
                       </span>
                     )}
                     <p className="text-xs font-semibold truncate">{categoria}</p>
-                    {tipoCampeonato && tipoCampeonato !== 'Convencional' && (
+                    {ehExcecaoMarcha(categoria, tipoMarcha, tipoCampeonato, categoriasMistas) && (
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
                         Excl. Marcha
                       </span>
