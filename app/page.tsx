@@ -814,13 +814,11 @@ function HomeContent() {
                   <span>Mae: {animal.mae || '—'}</span>
                 </div>
 
-                {/* Botoes de acao ficam separados aqui embaixo (nao mais
-                    colados no canto superior direito, debaixo do numero do
-                    catalogo) - reduz clique acidental de quem rola a lista
-                    com o polegar direito, que naturalmente passa por cima
-                    daquele canto a cada card. */}
+                {/* Botoes de acao ficam do lado ESQUERDO, longe da borda
+                    direita do card - e onde o polegar direito de quem rola
+                    a lista naturalmente passa e causa clique acidental. */}
                 {(whatsappConfig?.numero || !searchMode) && (
-                  <div className="flex items-center justify-end gap-2 mt-2">
+                  <div className="flex items-center justify-start gap-2 mt-2">
                     {whatsappConfig?.numero && (
                       <button
                         onClick={e => abrirWhatsapp(animal, e)}
