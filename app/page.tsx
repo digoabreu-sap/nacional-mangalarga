@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
 import Banner from '@/components/Banner'
 import BottomNav from '@/components/BottomNav'
+import CategoriaCombobox from '@/components/CategoriaCombobox'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial } from '@/lib/colocacao'
 
@@ -18,12 +19,6 @@ const MARCHAS = [
 const PER_PAGE = 30
 const CACHE_KEY = 'nm_cache_pista'
 const PENDENTES_KEY = 'nm_votos_pendentes'
-
-const selectStyle = {
-  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
-  backgroundRepeat: 'no-repeat' as const,
-  backgroundPosition: 'right 12px center',
-}
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
@@ -703,12 +698,7 @@ function HomeContent() {
                 </div>
 
                 {/* Categoria always visible */}
-                <select value={categoria} onChange={e => setCategoria(e.target.value)}
-                  className="w-full py-2 px-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] transition-colors appearance-none"
-                  style={selectStyle}>
-                  <option value="Todas">Todas as categorias</option>
-                  {categorias.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <CategoriaCombobox categorias={categorias} value={categoria} onChange={setCategoria} />
               </div>
             </>
           )}

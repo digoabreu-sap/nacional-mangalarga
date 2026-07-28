@@ -11,6 +11,19 @@ type CampeonatoRanking = { campeonato: string; ranking: RankingItem[] }
 
 const MEDAL_IMGS = ['/medals/medal_1.png', '/medals/medal_2.png', '/medals/medal_3.png']
 
+// nm_votos.campeonato guarda a string composta "{tipo_campeonato} - {tipo_marcha}
+// - {categoria}" (ex: "Exclusivamente Marcha - MB - Cavalo Castrado") - aqui a
+// gente separa pra exibir so a categoria de verdade, com "Excl. Marcha" como
+// selo quando for o caso, em vez de jogar a string crua na tela.
+function parseCampeonato(campeonato: string): { tipoCampeonato: string; tipoMarcha: string; categoria: string } {
+  const partes = campeonato.split(' - ')
+  return {
+    tipoCampeonato: partes[0] || '',
+    tipoMarcha: partes[1] || '',
+    categoria: partes.slice(2).join(' - ') || campeonato,
+  }
+}
+
 export default function RankingPage() {
   const [secao, setSecao] = useState<'torcida' | 'destaques'>('torcida')
   const [rankings, setRankings] = useState<CampeonatoRanking[]>([])
@@ -110,10 +123,26 @@ export default function RankingPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filtered.map(r => (
+            {filtered.map(r => {
+              const { tipoCampeonato, tipoMarcha, categoria } = parseCampeonato(r.campeonato)
+              return (
               <div key={r.campeonato} className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] overflow-hidden">
                 <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-card-hover)]">
-                  <p className="text-xs font-semibold truncate">{r.campeonato}</p>
+                  <div className="flex items-center gap-2">
+                    {tipoMarcha && (
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                        tipoMarcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
+                      }`}>
+                        {tipoMarcha}
+                      </span>
+                    )}
+                    <p className="text-xs font-semibold truncate">{categoria}</p>
+                    {tipoCampeonato && tipoCampeonato !== 'Convencional' && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
+                        Excl. Marcha
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-[var(--accent)]">{r.ranking.reduce((s, a) => s + Number(a.total_votos), 0)} votos</p>
                 </div>
                 <div className="p-2 space-y-1">
@@ -136,7 +165,8 @@ export default function RankingPage() {
                   ))}
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

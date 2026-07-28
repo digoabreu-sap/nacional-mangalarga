@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { supabase, Campeonato } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
+import CategoriaCombobox from '@/components/CategoriaCombobox'
 import { normalizarColocacao, formatColocacaoOficial } from '@/lib/colocacao'
 
 type ResultadoLinha = {
@@ -151,6 +152,7 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
 export default function ResultadosPage() {
   const [campeonatos, setCampeonatos] = useState<Campeonato[]>([])
   const [filterMarcha, setFilterMarcha] = useState<string>('Todas')
+  const [filterCategoria, setFilterCategoria] = useState<string>('Todas')
   const [loading, setLoading] = useState(true)
   const [ultimaSync, setUltimaSync] = useState<string | null>(null)
 
@@ -174,15 +176,14 @@ export default function ResultadosPage() {
     loadSync()
   }, [])
 
-  // Agrupa pela categoria de verdade (Potro, Égua, etc.) - "Convencional" e
-  // "Exclusivamente Marcha" nao sao categorias, sao a modalidade dentro da
-  // categoria (se o animal concorre em morfologia+marcha ou so em marcha).
-  const grouped: Record<string, Campeonato[]> = {}
-  for (const c of campeonatos) {
-    const key = c.categoria
-    if (!grouped[key]) grouped[key] = []
-    grouped[key].push(c)
-  }
+  // "Convencional" e "Exclusivamente Marcha" nao sao categorias, sao a
+  // modalidade dentro da categoria (se o animal concorre em morfologia+marcha
+  // ou so em marcha) - por isso nao agrupamos mais por secao. A lista fica
+  // achatada e o usuario filtra pela categoria de verdade pelo combobox.
+  const categoriasDisponiveis = [...new Set(campeonatos.map(c => c.categoria))].sort()
+  const visiveis = filterCategoria === 'Todas'
+    ? campeonatos
+    : campeonatos.filter(c => c.categoria === filterCategoria)
 
   return (
     <main className="flex flex-col min-h-screen">
@@ -199,7 +200,7 @@ export default function ResultadosPage() {
               Atualizado em {new Date(ultimaSync).toLocaleString('pt-BR')}
             </p>
           )}
-          <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5">
+          <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5 mb-2">
             {['Todas', 'MB', 'MP'].map(m => (
               <button
                 key={m}
@@ -214,23 +215,19 @@ export default function ResultadosPage() {
               </button>
             ))}
           </div>
+          <CategoriaCombobox categorias={categoriasDisponiveis} value={filterCategoria} onChange={setFilterCategoria} />
         </div>
       </header>
 
-      <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full space-y-6">
+      <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full space-y-2">
         {loading ? (
           <div className="flex justify-center py-8">
             <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
           </div>
+        ) : visiveis.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)] text-center py-8">Nenhuma categoria encontrada</p>
         ) : (
-          Object.entries(grouped).map(([categoria, items]) => (
-            <div key={categoria}>
-              <h2 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2 px-1">{categoria}</h2>
-              <div className="space-y-2">
-                {items.map(c => <CategoriaResultado key={c.id} campeonato={c} />)}
-              </div>
-            </div>
-          ))
+          visiveis.map(c => <CategoriaResultado key={c.id} campeonato={c} />)
         )}
       </div>
 

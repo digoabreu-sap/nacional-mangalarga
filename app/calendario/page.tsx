@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import BottomNav from '@/components/BottomNav'
+import CategoriaCombobox from '@/components/CategoriaCombobox'
 import { supabase, Campeonato } from '@/lib/supabase'
-import { SCHEDULE, getEventType, getMarchaType, isToday, isPast, findCampeonatoParaEvento } from '@/lib/calendario'
+import { SCHEDULE, getEventType, getMarchaType, isToday, isPast, findCampeonatoParaEvento, eventMatchesCategoria } from '@/lib/calendario'
 
 export default function CalendarioPage() {
   const router = useRouter()
   const [filter, setFilter] = useState<'todos' | 'MB' | 'MP'>('todos')
+  const [filterCategoria, setFilterCategoria] = useState<string>('Todas')
   const [campeonatos, setCampeonatos] = useState<Campeonato[]>([])
   const [expandedDay, setExpandedDay] = useState<string | null>(() => {
     const today = SCHEDULE.find(s => isToday(s.date))
@@ -18,6 +20,7 @@ export default function CalendarioPage() {
   const destaqueRef = useRef<HTMLDivElement>(null)
 
   const nextIdx = SCHEDULE.findIndex(s => !isPast(s.date))
+  const categoriasDisponiveis = [...new Set(campeonatos.map(c => c.categoria))].sort()
 
   // Pra deixar cada prova do calendario clicavel, levando pro catalogo
   // filtrado daquela categoria.
@@ -60,6 +63,7 @@ export default function CalendarioPage() {
               </button>
             ))}
           </div>
+          <CategoriaCombobox categorias={categoriasDisponiveis} value={filterCategoria} onChange={setFilterCategoria} className="mt-2" />
         </div>
       </header>
 
@@ -67,15 +71,19 @@ export default function CalendarioPage() {
         {SCHEDULE.map((day, idx) => {
           const today = isToday(day.date)
           const past = isPast(day.date)
-          const expanded = expandedDay === day.date
+          const filtrandoCategoria = filterCategoria !== 'Todas'
+          // Com filtro de categoria ativo, expande todo dia que tiver
+          // resultado - sem isso o usuario teria que clicar em cada dia pra
+          // descobrir se a categoria escolhida esta la.
+          const expanded = filtrandoCategoria ? true : expandedDay === day.date
           const isNext = idx === nextIdx && !today
 
-          const filteredEvents = filter === 'todos'
-            ? day.events
-            : day.events.filter(e => {
-                const mt = getMarchaType(e)
-                return mt === null || mt === filter
-              })
+          const filteredEvents = day.events.filter(e => {
+            const mt = getMarchaType(e)
+            if (filter !== 'todos' && mt !== null && mt !== filter) return false
+            if (filtrandoCategoria && !eventMatchesCategoria(e, filterCategoria)) return false
+            return true
+          })
 
           if (filteredEvents.length === 0) return null
 
