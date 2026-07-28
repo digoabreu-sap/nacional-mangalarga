@@ -121,6 +121,11 @@ function CategoriaResultado({ campeonato }: { campeonato: Campeonato }) {
               {campeonato.tipo_marcha}
             </span>
             <span className="text-sm font-medium truncate">{campeonato.categoria}</span>
+            {campeonato.tipo_campeonato && campeonato.tipo_campeonato !== 'Convencional' && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
+                Excl. Marcha
+              </span>
+            )}
           </div>
         </div>
         <svg className={`w-4 h-4 text-[var(--text-muted)] flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -169,9 +174,12 @@ export default function ResultadosPage() {
     loadSync()
   }, [])
 
+  // Agrupa pela categoria de verdade (Potro, Égua, etc.) - "Convencional" e
+  // "Exclusivamente Marcha" nao sao categorias, sao a modalidade dentro da
+  // categoria (se o animal concorre em morfologia+marcha ou so em marcha).
   const grouped: Record<string, Campeonato[]> = {}
   for (const c of campeonatos) {
-    const key = c.tipo_campeonato
+    const key = c.categoria
     if (!grouped[key]) grouped[key] = []
     grouped[key].push(c)
   }
@@ -215,9 +223,9 @@ export default function ResultadosPage() {
             <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          Object.entries(grouped).map(([tipo, items]) => (
-            <div key={tipo}>
-              <h2 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2 px-1">{tipo}</h2>
+          Object.entries(grouped).map(([categoria, items]) => (
+            <div key={categoria}>
+              <h2 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2 px-1">{categoria}</h2>
               <div className="space-y-2">
                 {items.map(c => <CategoriaResultado key={c.id} campeonato={c} />)}
               </div>

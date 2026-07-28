@@ -444,7 +444,9 @@ create or replace function nm_daily_views(days int)
 returns table(dia date, total bigint)
 language sql security definer set search_path = public
 as $$
-  select date_trunc('day', created_at)::date as dia, count(*) as total
+  -- Agrupa pelo dia civil no horario de Brasilia, nao em UTC - senao visitas
+  -- da noite (Brasil) contam pro dia seguinte (UTC ja virou meia-noite).
+  select (created_at at time zone 'America/Sao_Paulo')::date as dia, count(*) as total
   from nm_page_views
   where created_at >= now() - (days || ' days')::interval
   group by dia

@@ -20,32 +20,37 @@ export default function BottomNav() {
   ]
 
   return (
-    <nav className="sticky bottom-0 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-t border-[var(--border)] px-4 py-2 safe-bottom">
-      <div className="max-w-2xl mx-auto flex justify-around">
-        {items.map(item => {
-          const active = pathname === item.href
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => {
-                // Link pra "/" nao faz nada se ja estamos em "/" (mesma rota,
-                // sem remount) - sem isso, sair da busca livre clicando em
-                // "Ao Vivo" nao tinha efeito nenhum na tela.
-                if (item.href === '/' && pathname === '/') {
-                  window.dispatchEvent(new Event('nm-ir-ao-vivo'))
-                }
-              }}
-              className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
-            >
-              <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
-              </svg>
-              <span className="text-[10px] truncate max-w-full">{item.label}</span>
-            </Link>
-          )
-        })}
-      </div>
-    </nav>
+    <>
+      {/* Espacador: reserva o espaco que a barra fixa ocupa, senao o
+          conteudo final da pagina ficaria escondido atras dela. */}
+      <div className="h-16 safe-bottom" aria-hidden="true" />
+      <nav className="fixed bottom-0 left-0 right-0 z-50 bg-[var(--bg-primary)]/95 backdrop-blur-sm border-t border-[var(--border)] px-4 py-2 safe-bottom">
+        <div className="max-w-2xl mx-auto flex justify-around">
+          {items.map(item => {
+            const active = pathname === item.href
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => {
+                  // Link pra "/" nao faz nada se ja estamos em "/" (mesma rota,
+                  // sem remount) - sem isso, sair da busca livre clicando em
+                  // "Ao Vivo" nao tinha efeito nenhum na tela.
+                  if (item.href === '/' && pathname === '/') {
+                    window.dispatchEvent(new Event('nm-ir-ao-vivo'))
+                  }
+                }}
+                className={`flex-1 min-w-0 flex flex-col items-center gap-0.5 ${active ? 'text-[var(--accent)]' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
+              >
+                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={item.icon} />
+                </svg>
+                <span className="text-[10px] truncate max-w-full">{item.label}</span>
+              </Link>
+            )
+          })}
+        </div>
+      </nav>
+    </>
   )
 }

@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     p_html_content: body.html_content || null,
     p_ativo: body.ativo ?? true,
     p_ordem: body.ordem ?? 0,
+    p_tamanho_pct: body.tamanho_pct ?? 100,
   })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data)
@@ -40,6 +41,7 @@ export async function PUT(req: NextRequest) {
     p_html_content: body.html_content || null,
     p_ativo: body.ativo ?? null,
     p_ordem: body.ordem ?? null,
+    p_tamanho_pct: body.tamanho_pct ?? null,
   })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data)

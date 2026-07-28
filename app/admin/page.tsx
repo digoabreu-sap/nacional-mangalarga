@@ -24,7 +24,7 @@ const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'res
 const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'whatsapp']
 
 type Admin = { id: number; email: string; nome: string; is_master: boolean; permissoes: string[] }
-type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number }
+type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number; tamanho_pct: number }
 type TopAnimal = { animal_id: number; nome: string; categoria: string; tipo_marcha: string; click_count: number }
 type DailyView = { dia: string; total: number }
 
@@ -422,8 +422,12 @@ function PistaBlock({ pista, categorias, onSave }: {
   const [selectedMarcha, setSelectedMarcha] = useState<'MB' | 'MP'>((pista.tipo_marcha as 'MB' | 'MP') || 'MB')
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [busca, setBusca] = useState('')
 
   const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] appearance-none"
+  const categoriasFiltradas = busca.trim()
+    ? categorias.filter(c => c.toLowerCase().includes(busca.trim().toLowerCase()) || c === selected)
+    : categorias
 
   async function save() {
     setSaving(true)
@@ -441,9 +445,16 @@ function PistaBlock({ pista, categorias, onSave }: {
           {pista.categoria ? `${pista.categoria} (${pista.tipo_marcha === 'MP' ? 'Marcha Picada' : 'Marcha Batida'})` : 'Nenhuma configurada'}
         </span>
       </p>
+      <input
+        type="text"
+        value={busca}
+        onChange={e => setBusca(e.target.value)}
+        placeholder="Pesquisar categoria..."
+        className={inputClass}
+      />
       <select value={selected} onChange={e => setSelected(e.target.value)} className={inputClass}>
         <option value="">Nenhuma</option>
-        {categorias.map(c => <option key={c} value={c}>{c}</option>)}
+        {categoriasFiltradas.map(c => <option key={c} value={c}>{c}</option>)}
       </select>
       <div className="flex gap-1 bg-[var(--bg-primary)] rounded-lg p-0.5">
         {(['MB', 'MP'] as const).map(m => (
@@ -608,6 +619,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfMsg, setPdfMsg] = useState('')
   const [pdfParseado, setPdfParseado] = useState<PdfParseado | null>(null)
+  const [busca, setBusca] = useState('')
   // Quando o PDF acha a categoria certa sozinho, a gente monta e mescla as
   // linhas na mao e muda selectedId so pra atualizar o combo - sem essa
   // trava, o efeito abaixo (que reage a mudanca de selectedId) recarregaria
@@ -621,6 +633,9 @@ function ResultadoManualPanel({ token }: { token: string }) {
   }, [token])
 
   const campeonato = campeonatos.find(c => String(c.id) === selectedId) || null
+  const campeonatosFiltrados = busca.trim()
+    ? campeonatos.filter(c => c.nome.toLowerCase().includes(busca.trim().toLowerCase()) || String(c.id) === selectedId)
+    : campeonatos
 
   const loadDados = useCallback(async () => {
     if (!campeonato) { setLinhasEdit([]); return }
@@ -748,9 +763,16 @@ function ResultadoManualPanel({ token }: { token: string }) {
       </div>
       {pdfMsg && <p className="text-xs text-[var(--accent)]">{pdfMsg}</p>}
 
+      <input
+        type="text"
+        value={busca}
+        onChange={e => setBusca(e.target.value)}
+        placeholder="Pesquisar categoria..."
+        className={inputClass}
+      />
       <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className={inputClass}>
         <option value="">Selecione a categoria...</option>
-        {campeonatos.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        {campeonatosFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
       </select>
 
       {campeonato && (
@@ -908,21 +930,40 @@ function BannersPanel({ token }: { token: string }) {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0 })
+  const [form, setForm] = useState({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0, tamanho_pct: 100 })
+  const [espacamento, setEspacamento] = useState(12)
+  const [salvandoEspacamento, setSalvandoEspacamento] = useState(false)
+  const [msgEspacamento, setMsgEspacamento] = useState('')
 
   const loadBanners = useCallback(async () => {
-    const [bannersRes, cliquesRes] = await Promise.all([
+    const [bannersRes, cliquesRes, configRes] = await Promise.all([
       fetch('/api/admin/banners', { headers: { 'Authorization': `Bearer ${token}` } }),
       fetch('/api/admin/stats?type=banner_clicks', { headers: { 'Authorization': `Bearer ${token}` } }),
+      fetch('/api/admin/banner-config', { headers: { 'Authorization': `Bearer ${token}` } }),
     ])
     const data = await bannersRes.json()
     const cliquesData: { banner_id: number; cliques: number }[] = await cliquesRes.json()
+    const config = await configRes.json()
     setBanners(data)
     setCliques(Object.fromEntries((cliquesData || []).map(c => [c.banner_id, c.cliques])))
+    setEspacamento(config.espacamento_px ?? 12)
     setLoading(false)
   }, [token])
 
   useEffect(() => { loadBanners() }, [loadBanners])
+
+  async function salvarEspacamento() {
+    setSalvandoEspacamento(true)
+    setMsgEspacamento('')
+    const res = await fetch('/api/admin/banner-config', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ espacamento_px: espacamento }),
+    })
+    setSalvandoEspacamento(false)
+    setMsgEspacamento(res.ok ? 'Atualizado!' : 'Erro ao salvar')
+    if (res.ok) setTimeout(() => setMsgEspacamento(''), 3000)
+  }
 
   async function saveBanner(e: React.FormEvent) {
     e.preventDefault()
@@ -935,7 +976,7 @@ function BannersPanel({ token }: { token: string }) {
     })
     setShowForm(false)
     setEditingId(null)
-    setForm({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0 })
+    setForm({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0, tamanho_pct: 100 })
     loadBanners()
   }
 
@@ -963,9 +1004,29 @@ function BannersPanel({ token }: { token: string }) {
 
   return (
     <div className="space-y-4">
+      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-2">
+        <h3 className="text-sm font-semibold">Espaçamento entre banners (letreiro)</h3>
+        <p className="text-xs text-[var(--text-muted)]">Distância em pixels entre um banner e o próximo, quando há 2 ou mais rolando.</p>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={80}
+            value={espacamento}
+            onChange={e => setEspacamento(Number(e.target.value))}
+            className={`${inputClass} w-24`}
+          />
+          <span className="text-xs text-[var(--text-muted)]">px</span>
+          <button onClick={salvarEspacamento} disabled={salvandoEspacamento} className="px-3 py-1.5 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+            {salvandoEspacamento ? 'Salvando...' : 'Salvar'}
+          </button>
+          {msgEspacamento && <span className="text-xs text-green-400">{msgEspacamento}</span>}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold">Banners ({banners.length})</h3>
-        <button onClick={() => { setShowForm(true); setEditingId(null); setForm({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0 }) }}
+        <button onClick={() => { setShowForm(true); setEditingId(null); setForm({ posicao: 'topo', titulo: '', imagem_url: '', link_url: '', html_content: '', ativo: true, ordem: 0, tamanho_pct: 100 }) }}
           className="px-3 py-1.5 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold">
           + Novo Banner
         </button>
@@ -984,6 +1045,18 @@ function BannersPanel({ token }: { token: string }) {
           <input placeholder="URL da imagem" value={form.imagem_url} onChange={e => setForm({ ...form, imagem_url: e.target.value })} className={inputClass} />
           <input placeholder="Link de destino (opcional)" value={form.link_url} onChange={e => setForm({ ...form, link_url: e.target.value })} className={inputClass} />
           <textarea placeholder="HTML personalizado (opcional, substitui imagem)" value={form.html_content} onChange={e => setForm({ ...form, html_content: e.target.value })} rows={3} className={inputClass} />
+          <div>
+            <label className="text-xs text-[var(--text-muted)] block mb-1">Tamanho ({form.tamanho_pct}% do padrão) — ajuste pra este banner não ficar maior/menor que os outros</label>
+            <input
+              type="range"
+              min={20}
+              max={200}
+              step={5}
+              value={form.tamanho_pct}
+              onChange={e => setForm({ ...form, tamanho_pct: Number(e.target.value) })}
+              className="w-full"
+            />
+          </div>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={form.ativo} onChange={e => setForm({ ...form, ativo: e.target.checked })} />
             Ativo
@@ -1009,13 +1082,14 @@ function BannersPanel({ token }: { token: string }) {
                 </span>
                 <span className="text-sm ml-2">{b.titulo || '(sem titulo)'}</span>
                 <span className="text-[10px] text-[var(--text-muted)] ml-2">Ordem: {b.ordem}</span>
+                <span className="text-[10px] text-[var(--text-muted)] ml-2">Tamanho: {b.tamanho_pct ?? 100}%</span>
                 <span className="text-[10px] text-[var(--accent)] font-semibold ml-2">{cliques[b.id] || 0} cliques</span>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => toggleBanner(b)} className={`text-xs ${b.ativo ? 'text-green-400' : 'text-red-400'}`}>
                   {b.ativo ? 'ON' : 'OFF'}
                 </button>
-                <button onClick={() => { setEditingId(b.id); setForm({ posicao: b.posicao, titulo: b.titulo || '', imagem_url: b.imagem_url || '', link_url: b.link_url || '', html_content: b.html_content || '', ativo: b.ativo, ordem: b.ordem }); setShowForm(true) }}
+                <button onClick={() => { setEditingId(b.id); setForm({ posicao: b.posicao, titulo: b.titulo || '', imagem_url: b.imagem_url || '', link_url: b.link_url || '', html_content: b.html_content || '', ativo: b.ativo, ordem: b.ordem, tamanho_pct: b.tamanho_pct ?? 100 }); setShowForm(true) }}
                   className="text-xs text-[var(--accent)]">Editar</button>
                 <button onClick={() => deleteBanner(b.id)} className="text-xs text-red-400">Excluir</button>
               </div>

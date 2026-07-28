@@ -26,9 +26,12 @@ export default function Campeonatos() {
     load()
   }, [filterMarcha])
 
+  // Agrupa pela categoria de verdade (Potro, Égua, etc.) - "Convencional" e
+  // "Exclusivamente Marcha" nao sao categorias, sao a modalidade dentro da
+  // categoria (se o animal concorre em morfologia+marcha ou so em marcha).
   const grouped: Record<string, Campeonato[]> = {}
   for (const c of campeonatos) {
-    const key = c.tipo_campeonato
+    const key = c.categoria
     if (!grouped[key]) grouped[key] = []
     grouped[key].push(c)
   }
@@ -42,7 +45,7 @@ export default function Campeonatos() {
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
             </Link>
             <h1 className="text-base font-bold">Campeonatos</h1>
-            <span className="ml-auto text-xs text-[var(--text-muted)]">{campeonatos.length} categorias</span>
+            <span className="ml-auto text-xs text-[var(--text-muted)]">{Object.keys(grouped).length} categorias</span>
           </div>
           <div className="flex gap-1 bg-[var(--bg-card)] rounded-lg p-0.5">
             {['Todas', 'MB', 'MP'].map(m => (
@@ -68,9 +71,9 @@ export default function Campeonatos() {
             <div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
-          Object.entries(grouped).map(([tipo, items]) => (
-            <div key={tipo} className="mb-6">
-              <h2 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2 px-1">{tipo}</h2>
+          Object.entries(grouped).map(([categoria, items]) => (
+            <div key={categoria} className="mb-6">
+              <h2 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2 px-1">{categoria}</h2>
               <div className="space-y-1.5">
                 {items.map(c => (
                   <Link
@@ -86,6 +89,11 @@ export default function Campeonatos() {
                           {c.tipo_marcha}
                         </span>
                         <span className="text-sm font-medium truncate">{c.categoria}</span>
+                        {c.tipo_campeonato && c.tipo_campeonato !== 'Convencional' && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
+                            Excl. Marcha
+                          </span>
+                        )}
                       </div>
                     </div>
                     <span className="text-xs text-[var(--text-muted)] ml-2 flex-shrink-0">{c.total_animais} animais</span>
