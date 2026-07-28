@@ -5,7 +5,8 @@ import { supabase, Campeonato } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
-import { calcularCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
+
+type LinhaCampeonato = { categoria: string; tipo_marcha: string; total_animais: number }
 
 export default function Campeonatos() {
   const [campeonatos, setCampeonatos] = useState<Campeonato[]>([])
@@ -32,14 +33,25 @@ export default function Campeonatos() {
 
   // "Convencional" e "Exclusivamente Marcha" nao sao categorias, sao a
   // modalidade dentro da categoria (se o animal concorre em morfologia+marcha
-  // ou so em marcha) - por isso nao agrupamos mais por secao. A lista fica
-  // achatada e o usuario filtra pela categoria de verdade (Potro, Égua, etc.)
-  // pelo combobox, igual a busca de animais.
-  const categoriasDisponiveis = [...new Set(campeonatos.map(c => c.categoria))].sort()
+  // ou so em marcha) - por isso a lista nunca deve ter uma linha separada por
+  // modalidade. Junta tudo numa linha so por categoria+marcha, somando os
+  // animais - quem quiser saber se um animal especifico e Excl. Marcha ve
+  // isso no proprio card do animal, nao aqui na lista de categorias.
+  const linhasPorChave = new Map<string, LinhaCampeonato>()
+  for (const c of campeonatos) {
+    const key = `${c.categoria}|${c.tipo_marcha}`
+    const existente = linhasPorChave.get(key)
+    if (existente) existente.total_animais += c.total_animais
+    else linhasPorChave.set(key, { categoria: c.categoria, tipo_marcha: c.tipo_marcha, total_animais: c.total_animais })
+  }
+  const linhas = [...linhasPorChave.values()].sort((a, b) =>
+    a.categoria.localeCompare(b.categoria) || a.tipo_marcha.localeCompare(b.tipo_marcha)
+  )
+
+  const categoriasDisponiveis = [...new Set(linhas.map(l => l.categoria))].sort()
   const visiveis = filterCategoria === 'Todas'
-    ? campeonatos
-    : campeonatos.filter(c => c.categoria === filterCategoria)
-  const categoriasMistas = calcularCategoriasMistas(campeonatos)
+    ? linhas
+    : linhas.filter(l => l.categoria === filterCategoria)
 
   return (
     <main className="flex flex-col min-h-screen">
@@ -80,28 +92,23 @@ export default function Campeonatos() {
           <p className="text-sm text-[var(--text-muted)] text-center py-8">Nenhum campeonato encontrado</p>
         ) : (
           <div className="space-y-1.5">
-            {visiveis.map(c => (
+            {visiveis.map(l => (
               <Link
-                key={c.id}
-                href={`/?campeonato=${encodeURIComponent(c.nome)}`}
+                key={`${l.categoria}|${l.tipo_marcha}`}
+                href={`/?categoria=${encodeURIComponent(l.categoria)}&marcha=${l.tipo_marcha}`}
                 className="flex items-center justify-between bg-[var(--bg-card)] rounded-lg p-3 border border-[var(--border)] hover:border-[var(--accent)]/30 transition-all"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                      c.tipo_marcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
+                      l.tipo_marcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
                     }`}>
-                      {c.tipo_marcha}
+                      {l.tipo_marcha}
                     </span>
-                    <span className="text-sm font-medium truncate">{c.categoria}</span>
-                    {ehExcecaoMarcha(c.categoria, c.tipo_marcha, c.tipo_campeonato, categoriasMistas) && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
-                        Excl. Marcha
-                      </span>
-                    )}
+                    <span className="text-sm font-medium truncate">{l.categoria}</span>
                   </div>
                 </div>
-                <span className="text-xs text-[var(--text-muted)] ml-2 flex-shrink-0">{c.total_animais} animais</span>
+                <span className="text-xs text-[var(--text-muted)] ml-2 flex-shrink-0">{l.total_animais} animais</span>
               </Link>
             ))}
           </div>

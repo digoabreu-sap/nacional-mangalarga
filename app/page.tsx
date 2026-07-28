@@ -48,13 +48,19 @@ function HomeContent() {
   const { user, ensureUser } = useAuth()
   const campeonatoParam = searchParams.get('campeonato')
   const buscaParam = searchParams.get('busca')
+  // categoria/marcha (sem campeonato) chegam de listas que navegam por
+  // categoria de verdade (Potro, Égua, Castrado...), sem travar num
+  // tipo_campeonato especifico - assim animais Convencional e Exclusivamente
+  // Marcha da mesma categoria aparecem juntos, sem segregar em duas telas.
+  const categoriaParam = searchParams.get('categoria')
+  const marchaParam = searchParams.get('marcha')
 
   // Modo padrao: trava na categoria "em pista" configurada no admin, sem
   // filtro editavel - evita o usuario ficar mexendo em filtro toda hora.
   // A busca livre (com filtros de marcha/categoria) so aparece quando o
   // usuario aciona o icone de busca (ou chega aqui via link de campeonato
   // ou do icone de busca flutuante global, com ?busca=1).
-  const [searchMode, setSearchMode] = useState(() => !!campeonatoParam || !!buscaParam)
+  const [searchMode, setSearchMode] = useState(() => !!campeonatoParam || !!buscaParam || !!categoriaParam)
   // So foca (e abre o teclado no celular) quando o usuario clicou de
   // proposito num icone de busca (o da propria Home ou o flutuante global)
   // - chegar aqui por um link de campeonato (calendario/campeonatos) nao
@@ -62,8 +68,8 @@ function HomeContent() {
   const [autoFocusBusca, setAutoFocusBusca] = useState(() => !!buscaParam)
 
   const [search, setSearch] = useState('')
-  const [marcha, setMarcha] = useState<string>('Todas')
-  const [categoria, setCategoria] = useState<string>('Todas')
+  const [marcha, setMarcha] = useState<string>(() => marchaParam || 'Todas')
+  const [categoria, setCategoria] = useState<string>(() => categoriaParam || 'Todas')
   // Ate 2 "pistas" (rings) podem estar em julgamento ao mesmo tempo - o
   // usuario escolhe qual acompanhar quando ha 2 configuradas. categoriaAtual/
   // marchaAtual sempre refletem a pista atualmente selecionada, entao toda a
@@ -120,6 +126,11 @@ function HomeContent() {
   useEffect(() => {
     setCampeonatoFilter(campeonatoParam)
   }, [campeonatoParam])
+
+  useEffect(() => {
+    if (categoriaParam) setCategoria(categoriaParam)
+    if (marchaParam) setMarcha(marchaParam)
+  }, [categoriaParam, marchaParam])
 
   useEffect(() => {
     supabase.rpc('nm_get_whatsapp_config').then(({ data }) => {

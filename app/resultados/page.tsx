@@ -6,7 +6,6 @@ import { supabase, Campeonato } from '@/lib/supabase'
 import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
 import { normalizarColocacao, formatColocacaoOficial } from '@/lib/colocacao'
-import { calcularCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 type ResultadoLinha = {
   num_catalogo: string
@@ -17,6 +16,8 @@ type ResultadoLinha = {
   colocacao: string | null
   origem: string
 }
+
+type LinhaCampeonato = { categoria: string; tipo_marcha: string; total_animais: number }
 
 // Mesmo formato da pagina "Resultado Final" da ABCCMM: Nº, Competidor,
 // Funcional, Morfologia, Andamento (=marcha) e Classificação numa unica
@@ -68,7 +69,11 @@ function ResultadoFinalTable({ linhas, catalogosExistentes }: { linhas: Resultad
   )
 }
 
-function CategoriaResultado({ campeonato, categoriasMistas }: { campeonato: Campeonato; categoriasMistas: Set<string> }) {
+// Consulta por categoria+marcha, SEM filtrar por tipo_campeonato - "Excl.
+// Marcha" nao e uma categoria a parte, entao o resultado final junta todo
+// mundo da mesma categoria+marcha (Convencional e Exclusivamente Marcha)
+// numa tabela so, como uma unica prova.
+function CategoriaResultado({ categoria, tipoMarcha, totalAnimais }: { categoria: string; tipoMarcha: string; totalAnimais: number }) {
   const [expanded, setExpanded] = useState(false)
   const [loading, setLoading] = useState(false)
   const [linhas, setLinhas] = useState<ResultadoLinha[]>([])
@@ -84,16 +89,14 @@ function CategoriaResultado({ campeonato, categoriasMistas }: { campeonato: Camp
         supabase
           .from('nm_resultados')
           .select('num_catalogo, nome_animal, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, colocacao, origem')
-          .eq('tipo_campeonato', campeonato.tipo_campeonato)
-          .eq('tipo_marcha', campeonato.tipo_marcha)
-          .eq('categoria', campeonato.categoria)
+          .eq('tipo_marcha', tipoMarcha)
+          .eq('categoria', categoria)
           .eq('tipo_prova', 'final'),
         supabase
           .from('nm_animais')
           .select('num_catalogo')
-          .eq('tipo_campeonato', campeonato.tipo_campeonato)
-          .eq('tipo_marcha', campeonato.tipo_marcha)
-          .eq('categoria', campeonato.categoria),
+          .eq('tipo_marcha', tipoMarcha)
+          .eq('categoria', categoria),
       ])
 
       setLinhas(resultadosRes.data || [])
@@ -118,16 +121,12 @@ function CategoriaResultado({ campeonato, categoriasMistas }: { campeonato: Camp
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-              campeonato.tipo_marcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
+              tipoMarcha === 'MB' ? 'bg-[var(--mb-color)]/10 text-[var(--mb-color)]' : 'bg-[var(--mp-color)]/10 text-[var(--mp-color)]'
             }`}>
-              {campeonato.tipo_marcha}
+              {tipoMarcha}
             </span>
-            <span className="text-sm font-medium truncate">{campeonato.categoria}</span>
-            {ehExcecaoMarcha(campeonato.categoria, campeonato.tipo_marcha, campeonato.tipo_campeonato, categoriasMistas) && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)] flex-shrink-0">
-                Excl. Marcha
-              </span>
-            )}
+            <span className="text-sm font-medium truncate">{categoria}</span>
+            <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">{totalAnimais} animais</span>
           </div>
         </div>
         <svg className={`w-4 h-4 text-[var(--text-muted)] flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -178,14 +177,23 @@ export default function ResultadosPage() {
   }, [])
 
   // "Convencional" e "Exclusivamente Marcha" nao sao categorias, sao a
-  // modalidade dentro da categoria (se o animal concorre em morfologia+marcha
-  // ou so em marcha) - por isso nao agrupamos mais por secao. A lista fica
-  // achatada e o usuario filtra pela categoria de verdade pelo combobox.
-  const categoriasDisponiveis = [...new Set(campeonatos.map(c => c.categoria))].sort()
-  const categoriasMistas = calcularCategoriasMistas(campeonatos)
+  // modalidade dentro da categoria - junta numa linha so por categoria+marcha,
+  // somando os animais, em vez de uma linha por modalidade.
+  const linhasPorChave = new Map<string, LinhaCampeonato>()
+  for (const c of campeonatos) {
+    const key = `${c.categoria}|${c.tipo_marcha}`
+    const existente = linhasPorChave.get(key)
+    if (existente) existente.total_animais += c.total_animais
+    else linhasPorChave.set(key, { categoria: c.categoria, tipo_marcha: c.tipo_marcha, total_animais: c.total_animais })
+  }
+  const linhas = [...linhasPorChave.values()].sort((a, b) =>
+    a.categoria.localeCompare(b.categoria) || a.tipo_marcha.localeCompare(b.tipo_marcha)
+  )
+
+  const categoriasDisponiveis = [...new Set(linhas.map(l => l.categoria))].sort()
   const visiveis = filterCategoria === 'Todas'
-    ? campeonatos
-    : campeonatos.filter(c => c.categoria === filterCategoria)
+    ? linhas
+    : linhas.filter(l => l.categoria === filterCategoria)
 
   return (
     <main className="flex flex-col min-h-screen">
@@ -229,7 +237,9 @@ export default function ResultadosPage() {
         ) : visiveis.length === 0 ? (
           <p className="text-sm text-[var(--text-muted)] text-center py-8">Nenhuma categoria encontrada</p>
         ) : (
-          visiveis.map(c => <CategoriaResultado key={c.id} campeonato={c} categoriasMistas={categoriasMistas} />)
+          visiveis.map(l => (
+            <CategoriaResultado key={`${l.categoria}|${l.tipo_marcha}`} categoria={l.categoria} tipoMarcha={l.tipo_marcha} totalAnimais={l.total_animais} />
+          ))
         )}
       </div>
 
