@@ -473,6 +473,9 @@ function HomeContent() {
     let query = supabase
       .from('nm_animais')
       .select('*', { count: 'exact' })
+      // Classificados pra final de marcha (ate 7) sempre primeiro, o resto
+      // segue pelo numero do catalogo.
+      .order('finalista_marcha', { ascending: false })
       .order('num_catalogo_int', { ascending: true, nullsFirst: false })
       .range(from, to)
 
@@ -786,6 +789,7 @@ function HomeContent() {
               href={`/animal/${animal.num_catalogo || animal.id}`}
               onClick={() => trackAnimalClick(animal.id)}
               className={`block bg-[var(--bg-card)] rounded-xl p-4 border transition-all active:scale-[0.98] ${
+                animal.finalista_marcha ? 'border-[var(--accent-dark)] shadow-[0_0_0_1px_var(--accent-dark)]' :
                 ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
               }`}
             >
@@ -800,6 +804,11 @@ function HomeContent() {
                     {(ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) || animal.tambem_excl_marcha) && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)]">
                         Excl. Marcha
+                      </span>
+                    )}
+                    {animal.finalista_marcha && (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
+                        🏁 Classificado pra Final
                       </span>
                     )}
                     {ehLider && (
