@@ -212,6 +212,16 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
                     Excl. Marcha
                   </span>
                 )}
+                {animal.finalista_marcha && (
+                  <span className="text-xs font-bold px-2 py-1 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
+                    🏁 Classificado pra Final
+                  </span>
+                )}
+                {animal.retirado && (
+                  <span className="text-xs font-bold px-2 py-1 rounded bg-black/10 text-[var(--text-secondary)]">
+                    Retirado
+                  </span>
+                )}
               </div>
               <h2 className="text-xl font-bold mb-1">{animal.nome}</h2>
               <p className="text-sm text-[var(--text-secondary)]">{animal.campeonato}</p>
@@ -337,7 +347,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
         </div>
 
         {/* Voting */}
-        <VotingPanel animalId={animal.id} campeonato={animal.campeonato} />
+        {!animal.retirado && <VotingPanel animalId={animal.id} campeonato={animal.campeonato} />}
 
         {/* Compre (WhatsApp) */}
         {whatsappConfig?.numero && (

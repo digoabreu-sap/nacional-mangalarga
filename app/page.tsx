@@ -21,6 +21,7 @@ const MARCHAS = [
 const PER_PAGE = 30
 const CACHE_KEY = 'nm_cache_pista'
 const PENDENTES_KEY = 'nm_votos_pendentes'
+const DESTACAR_FINALISTAS_KEY = 'nm_destacar_finalistas'
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
@@ -97,6 +98,14 @@ function HomeContent() {
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
+  // Preferencia por aparelho (localStorage) - liga/desliga so a REORDENACAO
+  // dos classificados pro topo. O selo/borda de destaque continuam
+  // aparecendo sempre, independente disso.
+  const [destacarFinalistas, setDestacarFinalistas] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const v = localStorage.getItem(DESTACAR_FINALISTAS_KEY)
+    return v === null ? true : v === '1'
+  })
   // Marca os catalogos ja consultados (independente de ter achado resultado
   // ou nao) pra nao reconsultar toda hora - so o que ainda nao foi tentado
   // entra na proxima busca em lote.
@@ -473,11 +482,12 @@ function HomeContent() {
     let query = supabase
       .from('nm_animais')
       .select('*', { count: 'exact' })
-      // Classificados pra final de marcha (ate 7) sempre primeiro, o resto
-      // segue pelo numero do catalogo.
-      .order('finalista_marcha', { ascending: false })
-      .order('num_catalogo_int', { ascending: true, nullsFirst: false })
       .range(from, to)
+
+    // Classificados pra final de marcha (ate 7) primeiro, o resto segue pelo
+    // numero do catalogo - opcional, cada usuario liga/desliga no aparelho.
+    if (destacarFinalistas) query = query.order('finalista_marcha', { ascending: false })
+    query = query.order('num_catalogo_int', { ascending: true, nullsFirst: false })
 
     if (activeFilter) {
       if (activeFilter.type === 'haras') query = query.eq('haras', activeFilter.value)
@@ -515,7 +525,7 @@ function HomeContent() {
     // Em erro de rede (comum no parque com sinal fraco): nao apaga a lista
     // que ja estava na tela, deixa o que tinha (cache ou fetch anterior).
     setLoading(false)
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter, searchMode])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, searchMode, destacarFinalistas])
 
   useEffect(() => {
     if (!categoriaAtualCarregada) return
@@ -529,7 +539,7 @@ function HomeContent() {
       fetchAnimals(0, true)
     }, 300)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada, searchMode])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada, searchMode, destacarFinalistas])
 
   useEffect(() => {
     if (!sentinelRef.current || !hasMore) return
@@ -777,6 +787,19 @@ function HomeContent() {
 
       <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full">
         {campeonatoFilter && <CampeaoCampeonatoBanner campeonatoNome={campeonatoFilter} />}
+        <label className="flex items-center gap-2 mb-2 text-xs text-[var(--text-muted)] cursor-pointer select-none w-fit">
+          <input
+            type="checkbox"
+            checked={destacarFinalistas}
+            onChange={e => {
+              const v = e.target.checked
+              setDestacarFinalistas(v)
+              try { localStorage.setItem(DESTACAR_FINALISTAS_KEY, v ? '1' : '0') } catch { /* localStorage indisponivel */ }
+            }}
+            className="w-3.5 h-3.5 accent-[var(--accent)]"
+          />
+          🏁 Destacar classificados no topo
+        </label>
         <div className="space-y-2">
           {animals.map(animal => {
             const votos = votosPorAnimal[animal.id] || 0
@@ -789,6 +812,8 @@ function HomeContent() {
               href={`/animal/${animal.num_catalogo || animal.id}`}
               onClick={() => trackAnimalClick(animal.id)}
               className={`block bg-[var(--bg-card)] rounded-xl p-4 border transition-all active:scale-[0.98] ${
+                animal.retirado ? 'opacity-50' : ''
+              } ${
                 animal.finalista_marcha ? 'border-[var(--accent-dark)] shadow-[0_0_0_1px_var(--accent-dark)]' :
                 ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
               }`}
@@ -809,6 +834,11 @@ function HomeContent() {
                     {animal.finalista_marcha && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
                         🏁 Classificado pra Final
+                      </span>
+                    )}
+                    {animal.retirado && (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-black/10 text-[var(--text-secondary)]">
+                        Retirado
                       </span>
                     )}
                     {ehLider && (
@@ -845,7 +875,7 @@ function HomeContent() {
                       <p className="text-3xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
                     </div>
                   )}
-                  {!searchMode && (
+                  {!searchMode && !animal.retirado && (
                     <button
                       onClick={e => votarInline(animal, e)}
                       aria-label={jaVotei ? 'Remover meu voto' : 'Votar neste animal'}

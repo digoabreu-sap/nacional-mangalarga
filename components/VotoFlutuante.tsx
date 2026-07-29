@@ -54,6 +54,7 @@ export default function VotoFlutuante() {
         .from('nm_animais')
         .select('id, nome, num_catalogo, haras, campeonato')
         .eq('categoria', categoriaAtual)
+        .eq('retirado', false)
         .order('num_catalogo_int', { ascending: true, nullsFirst: false })
       if (marchaAtual) query = query.eq('tipo_marcha', marchaAtual)
       const { data } = await query

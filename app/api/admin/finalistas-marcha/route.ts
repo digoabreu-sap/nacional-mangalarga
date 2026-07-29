@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('nm_animais')
-    .select('id, nome, num_catalogo, haras, finalista_marcha')
+    .select('id, nome, num_catalogo, haras, finalista_marcha, retirado')
     .eq('categoria', categoria)
     .eq('tipo_marcha', tipoMarcha)
     .order('num_catalogo_int', { ascending: true, nullsFirst: false })
