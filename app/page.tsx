@@ -21,11 +21,13 @@ const MARCHAS = [
 const PER_PAGE = 30
 const CACHE_KEY = 'nm_cache_pista'
 const PENDENTES_KEY = 'nm_votos_pendentes'
+const MARCACOES_LOCAIS_KEY = 'nm_marcacoes_locais'
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null }
+type MarcacoesLocais = { entre7: number[]; retirado: number[] }
 const FASE_LABEL: Record<string, string> = { morfologia: 'Morfologia', marcha: 'Marcha', funcional: 'Prova Funcional' }
 
 function lerVotosPendentes(): VotoPendente[] {
@@ -33,6 +35,19 @@ function lerVotosPendentes(): VotoPendente[] {
 }
 function salvarVotosPendentes(v: VotoPendente[]) {
   try { localStorage.setItem(PENDENTES_KEY, JSON.stringify(v)) } catch { /* localStorage indisponivel */ }
+}
+
+// "Entre os 7" / "Retirado" marcados pelo proprio usuario (fallback quando o
+// admin nao define nada pra categoria) - vive so no aparelho dele, nunca vai
+// pro banco nem e visto por outros usuarios.
+function lerMarcacoesLocais(): MarcacoesLocais {
+  try {
+    const raw = JSON.parse(localStorage.getItem(MARCACOES_LOCAIS_KEY) || 'null')
+    return { entre7: Array.isArray(raw?.entre7) ? raw.entre7 : [], retirado: Array.isArray(raw?.retirado) ? raw.retirado : [] }
+  } catch { return { entre7: [], retirado: [] } }
+}
+function salvarMarcacoesLocais(v: MarcacoesLocais) {
+  try { localStorage.setItem(MARCACOES_LOCAIS_KEY, JSON.stringify(v)) } catch { /* localStorage indisponivel */ }
 }
 
 export default function Home() {
@@ -97,24 +112,31 @@ function HomeContent() {
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
+  // Comeca vazio (bate com o SSR, que nao tem acesso a localStorage) e so le
+  // o valor real depois de montado, no useEffect abaixo - ler direto no
+  // useState quebraria a hidratacao (server sempre renderiza vazio).
+  const [marcacoesLocais, setMarcacoesLocais] = useState<MarcacoesLocais>({ entre7: [], retirado: [] })
+  useEffect(() => {
+    setMarcacoesLocais(lerMarcacoesLocais())
+  }, [])
   // Marca os catalogos ja consultados (independente de ter achado resultado
   // ou nao) pra nao reconsultar toda hora - so o que ainda nao foi tentado
   // entra na proxima busca em lote.
   const catalogosConsultadosRef = useRef<Set<string>>(new Set())
-  const [animals, setAnimals] = useState<Animal[]>(() => {
-    if (typeof window === 'undefined') return []
+  // Comeca vazio (bate com o SSR) e so le o cache depois de montado, no
+  // useEffect abaixo - ler localStorage direto no useState quebra a
+  // hidratacao assim que o cache deixa de estar vazio (ex: apos reload).
+  const [animals, setAnimals] = useState<Animal[]>([])
+  const [total, setTotal] = useState(0)
+  useEffect(() => {
     try {
       const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
-      return cache?.animals || []
-    } catch { return [] }
-  })
-  const [total, setTotal] = useState(() => {
-    if (typeof window === 'undefined') return 0
-    try {
-      const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null')
-      return cache?.total || 0
-    } catch { return 0 }
-  })
+      if (cache?.animals?.length) {
+        setAnimals(cache.animals)
+        setTotal(cache.total || 0)
+      }
+    } catch { /* ignora */ }
+  }, [])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
@@ -346,39 +368,73 @@ function HomeContent() {
     return melhorTotal > 0 ? melhorId : null
   }, [votosPorAnimal])
 
-  // Voto direto no card, sem abrir a pagina do animal. Otimista: atualiza a
-  // tela na hora, e so guarda pra tentar de novo depois se a rede falhar -
-  // pensado pro sinal ruim de parque de exposicao.
-  // "Entre os 7" e "Retirado" sao controlados por qualquer usuario direto na
-  // lista, durante o evento ao vivo - mesmo espirito da votacao popular. As
-  // regras (max 7, nunca os dois ao mesmo tempo) sao aplicadas no banco; aqui
-  // so faz a atualizacao otimista e desfaz se o servidor recusar.
-  async function toggleEntreOs7(animal: Animal, e: React.MouseEvent) {
+  // Se o admin ja definiu Entre os 7/Retirado pra essa categoria (algum
+  // animal carregado tem uma das flags), essa vira a fonte oficial e some o
+  // controle local do usuario. Sem isso, cada usuario controla por conta
+  // propria (so no aparelho dele).
+  const adminDefiniuEntreOsSeteOuRetirado = useMemo(
+    () => animals.some(a => a.finalista_marcha || a.retirado),
+    [animals]
+  )
+  const animalsExibidos = useMemo(() => {
+    if (adminDefiniuEntreOsSeteOuRetirado) return animals
+    const entre7Set = new Set(marcacoesLocais.entre7)
+    const retiradoSet = new Set(marcacoesLocais.retirado)
+    const emAlta: Animal[] = []
+    const meio: Animal[] = []
+    const baixa: Animal[] = []
+    for (const a of animals) {
+      if (entre7Set.has(a.id)) emAlta.push(a)
+      else if (retiradoSet.has(a.id)) baixa.push(a)
+      else meio.push(a)
+    }
+    return [...emAlta, ...meio, ...baixa]
+  }, [animals, adminDefiniuEntreOsSeteOuRetirado, marcacoesLocais])
+
+  // "Entre os 7" e "Retirado": o admin pode definir no painel (Categoria) -
+  // dado compartilhado, valendo pra todo mundo. Se o admin NAO definiu nada
+  // pra essa categoria, cada usuario pode marcar por conta propria, mas so
+  // no proprio aparelho (localStorage) - nunca mexe no banco nem aparece pra
+  // outros usuarios.
+  function toggleEntreOs7Local(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    const anterior = { finalista_marcha: animal.finalista_marcha, retirado: animal.retirado }
-    const novoValor = !animal.finalista_marcha
-    setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, finalista_marcha: novoValor, retirado: novoValor ? false : a.retirado } : a))
-    const { error } = await supabase.rpc('nm_toggle_finalista_marcha', { p_animal_id: animal.id })
-    if (error) {
-      setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, ...anterior } : a))
-      setCategoriaToast(error.message?.includes('Ja tem 7') ? 'Já tem 7 animais entre os 7 nessa categoria' : 'Não foi possível atualizar')
-      setTimeout(() => setCategoriaToast(null), 4000)
-    }
+    setMarcacoesLocais(prev => {
+      const entre7 = new Set(prev.entre7)
+      const retirado = new Set(prev.retirado)
+      if (entre7.has(animal.id)) {
+        entre7.delete(animal.id)
+      } else {
+        if (entre7.size >= 7) {
+          setCategoriaToast('Você já marcou 7 animais como Entre os 7')
+          setTimeout(() => setCategoriaToast(null), 4000)
+          return prev
+        }
+        entre7.add(animal.id)
+        retirado.delete(animal.id)
+      }
+      const next = { entre7: [...entre7], retirado: [...retirado] }
+      salvarMarcacoesLocais(next)
+      return next
+    })
   }
 
-  async function toggleRetirado(animal: Animal, e: React.MouseEvent) {
+  function toggleRetiradoLocal(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    const anterior = { finalista_marcha: animal.finalista_marcha, retirado: animal.retirado }
-    const novoValor = !animal.retirado
-    setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, retirado: novoValor, finalista_marcha: novoValor ? false : a.finalista_marcha } : a))
-    const { error } = await supabase.rpc('nm_toggle_retirado', { p_animal_id: animal.id })
-    if (error) {
-      setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, ...anterior } : a))
-      setCategoriaToast('Não foi possível atualizar')
-      setTimeout(() => setCategoriaToast(null), 4000)
-    }
+    setMarcacoesLocais(prev => {
+      const entre7 = new Set(prev.entre7)
+      const retirado = new Set(prev.retirado)
+      if (retirado.has(animal.id)) {
+        retirado.delete(animal.id)
+      } else {
+        retirado.add(animal.id)
+        entre7.delete(animal.id)
+      }
+      const next = { entre7: [...entre7], retirado: [...retirado] }
+      salvarMarcacoesLocais(next)
+      return next
+    })
   }
 
   async function votarInline(animal: Animal, e: React.MouseEvent) {
@@ -814,20 +870,23 @@ function HomeContent() {
       <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full">
         {campeonatoFilter && <CampeaoCampeonatoBanner campeonatoNome={campeonatoFilter} />}
         <div className="space-y-2">
-          {animals.map(animal => {
+          {animalsExibidos.map(animal => {
             const votos = votosPorAnimal[animal.id] || 0
             const ehLider = !searchMode && animal.id === liderId
             const jaVotei = !searchMode && animal.campeonato != null && meuVotoPorCampeonato[animal.campeonato] === animal.id
             const resultado = animal.num_catalogo ? resultadosPorCatalogo[animal.num_catalogo] : undefined
+            const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.finalista_marcha : marcacoesLocais.entre7.includes(animal.id)
+            const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcacoesLocais.retirado.includes(animal.id)
+            const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode
             return (
             <Link
               key={animal.id}
               href={`/animal/${animal.num_catalogo || animal.id}`}
               onClick={() => trackAnimalClick(animal.id)}
               className={`block bg-[var(--bg-card)] rounded-xl p-4 border transition-all active:scale-[0.98] ${
-                animal.retirado ? 'opacity-50' : ''
+                retiradoAtivo ? 'opacity-50' : ''
               } ${
-                animal.finalista_marcha ? 'border-[var(--accent-dark)] shadow-[0_0_0_1px_var(--accent-dark)]' :
+                finalistaAtivo ? 'border-[var(--accent-dark)] shadow-[0_0_0_1px_var(--accent-dark)]' :
                 ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
               }`}
             >
@@ -844,36 +903,38 @@ function HomeContent() {
                         Excl. Marcha
                       </span>
                     )}
-                    {/* "Entre os 7" e "Retirado" sao controlados por qualquer
-                        usuario, ao vivo, direto na lista - por isso viram
-                        botoes (nao so selos) fora do modo de busca. */}
-                    {!searchMode ? (
+                    {/* Se o admin ja definiu isso pra categoria, vira selo
+                        informativo (dado oficial, compartilhado). Senao, cada
+                        usuario marca por conta propria (so no aparelho dele). */}
+                    {podeEditarLocal ? (
                       <button
-                        onClick={e => toggleEntreOs7(animal, e)}
-                        disabled={animal.retirado}
-                        aria-label={animal.finalista_marcha ? 'Remover dos Entre os 7' : 'Marcar como Entre os 7'}
+                        onClick={e => toggleEntreOs7Local(animal, e)}
+                        disabled={retiradoAtivo}
+                        aria-label={finalistaAtivo ? 'Remover dos Entre os 7 (marcação pessoal)' : 'Marcar como Entre os 7 (marcação pessoal)'}
+                        title="Marcação pessoal - só aparece pra você"
                         className={`text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1 transition-all active:scale-90 ${
-                          animal.finalista_marcha ? 'bg-[var(--accent-dark)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
-                        } ${animal.retirado ? 'opacity-40' : ''}`}
+                          finalistaAtivo ? 'bg-[var(--accent-dark)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                        } ${retiradoAtivo ? 'opacity-40' : ''}`}
                       >
                         🏁 Entre os 7
                       </button>
-                    ) : animal.finalista_marcha && (
+                    ) : finalistaAtivo && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
                         🏁 Entre os 7
                       </span>
                     )}
-                    {!searchMode ? (
+                    {podeEditarLocal ? (
                       <button
-                        onClick={e => toggleRetirado(animal, e)}
-                        aria-label={animal.retirado ? 'Desmarcar retirado' : 'Marcar como retirado'}
+                        onClick={e => toggleRetiradoLocal(animal, e)}
+                        aria-label={retiradoAtivo ? 'Desmarcar retirado (marcação pessoal)' : 'Marcar como retirado (marcação pessoal)'}
+                        title="Marcação pessoal - só aparece pra você"
                         className={`text-xs font-bold px-1.5 py-0.5 rounded transition-all active:scale-90 ${
-                          animal.retirado ? 'bg-black/20 text-[var(--text-primary)]' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                          retiradoAtivo ? 'bg-black/20 text-[var(--text-primary)]' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
                         }`}
                       >
                         Retirado
                       </button>
-                    ) : animal.retirado && (
+                    ) : retiradoAtivo && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-black/10 text-[var(--text-secondary)]">
                         Retirado
                       </span>
@@ -912,7 +973,7 @@ function HomeContent() {
                       <p className="text-3xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
                     </div>
                   )}
-                  {!searchMode && !animal.retirado && (
+                  {!searchMode && !retiradoAtivo && (
                     <button
                       onClick={e => votarInline(animal, e)}
                       aria-label={jaVotei ? 'Remover meu voto' : 'Votar neste animal'}
