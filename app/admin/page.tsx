@@ -414,17 +414,16 @@ function CategoriaPanel({ token }: { token: string }) {
         Configure ate 2 categorias ao mesmo tempo (2 rings julgando em paralelo). Quando as duas estiverem preenchidas, o visitante ve as duas no topo do site e escolhe entre elas quando quiser.
       </p>
       {pistas.map(pista => (
-        <PistaBlock key={pista.id} pista={pista} categorias={categorias} onSave={salvarPista} token={token} />
+        <PistaBlock key={pista.id} pista={pista} categorias={categorias} onSave={salvarPista} />
       ))}
     </div>
   )
 }
 
-function PistaBlock({ pista, categorias, onSave, token }: {
+function PistaBlock({ pista, categorias, onSave }: {
   pista: Pista
   categorias: string[]
   onSave: (id: number, categoria: string, marcha: 'MB' | 'MP', fase: string) => Promise<boolean>
-  token: string
 }) {
   const [selected, setSelected] = useState(pista.categoria || '')
   const [selectedMarcha, setSelectedMarcha] = useState<'MB' | 'MP'>((pista.tipo_marcha as 'MB' | 'MP') || 'MB')
@@ -500,119 +499,6 @@ function PistaBlock({ pista, categorias, onSave, token }: {
       </div>
       {msg && <p className="text-sm text-green-400">{msg}</p>}
       <button onClick={save} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
-        {saving ? 'Salvando...' : 'Salvar'}
-      </button>
-      {pista.categoria && pista.tipo_marcha && (
-        <FinalistasMarchaPanel token={token} categoria={pista.categoria} tipoMarcha={pista.tipo_marcha} />
-      )}
-    </div>
-  )
-}
-
-type AnimalFinalista = { id: number; nome: string; num_catalogo: string | null; haras: string | null; finalista_marcha: boolean; retirado: boolean }
-
-// Depois da prova classificatoria de marcha, os 7 melhores avancam pra
-// disputa final e o resto fica aguardando - o admin marca esses 7 aqui pra
-// destaca-los no topo da lista pro publico. No mesmo painel, tambem marca
-// quem foi retirado da prova antes do final (sem limite de quantidade).
-function FinalistasMarchaPanel({ token, categoria, tipoMarcha }: { token: string; categoria: string; tipoMarcha: string }) {
-  const [animais, setAnimais] = useState<AnimalFinalista[]>([])
-  const [classificados, setClassificados] = useState<Set<number>>(new Set())
-  const [retirados, setRetirados] = useState<Set<number>>(new Set())
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    const params = new URLSearchParams({ categoria, tipo_marcha: tipoMarcha })
-    const res = await fetch(`/api/admin/finalistas-marcha?${params}`, { headers: { 'Authorization': `Bearer ${token}` } })
-    const data = await res.json()
-    const lista: AnimalFinalista[] = data.animais || []
-    setAnimais(lista)
-    setClassificados(new Set(lista.filter(a => a.finalista_marcha).map(a => a.id)))
-    setRetirados(new Set(lista.filter(a => a.retirado).map(a => a.id)))
-    setLoading(false)
-  }, [token, categoria, tipoMarcha])
-
-  useEffect(() => { load() }, [load])
-
-  function toggleClassificado(id: number) {
-    setClassificados(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else if (next.size < 7) next.add(id)
-      return next
-    })
-  }
-
-  function toggleRetirado(id: number) {
-    setRetirados(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  async function salvar() {
-    setSaving(true)
-    setMsg('')
-    const [resClassificados, resRetirados] = await Promise.all([
-      fetch('/api/admin/finalistas-marcha', {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categoria, tipo_marcha: tipoMarcha, animal_ids: [...classificados] }),
-      }),
-      fetch('/api/admin/retirados', {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ categoria, tipo_marcha: tipoMarcha, animal_ids: [...retirados] }),
-      }),
-    ])
-    setSaving(false)
-    setMsg(resClassificados.ok && resRetirados.ok ? 'Atualizado!' : 'Erro ao salvar')
-    if (resClassificados.ok && resRetirados.ok) setTimeout(() => setMsg(''), 3000)
-  }
-
-  return (
-    <div className="border-t border-[var(--border)] pt-3 mt-1 space-y-2">
-      <p className="text-xs text-[var(--text-muted)]">
-        Classificados pra final de marcha ({classificados.size}/7) e retirados da prova — refletidos na lista do site.
-      </p>
-      {loading ? (
-        <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" /></div>
-      ) : animais.length === 0 ? (
-        <p className="text-xs text-[var(--text-muted)]">Nenhum animal encontrado nessa categoria.</p>
-      ) : (
-        <div className="max-h-64 overflow-y-auto space-y-1 bg-[var(--bg-primary)] rounded-lg p-2">
-          <div className="flex items-center gap-2 text-[10px] text-[var(--text-muted)] uppercase font-semibold px-1 pb-1 border-b border-[var(--border)]">
-            <span className="w-8 flex-shrink-0"></span>
-            <span className="flex-1">Animal</span>
-            <span className="w-16 flex-shrink-0 text-center">Class.</span>
-            <span className="w-16 flex-shrink-0 text-center">Retirado</span>
-          </div>
-          {animais.map(a => {
-            const marcado = classificados.has(a.id)
-            const desabilitadoClass = !marcado && classificados.size >= 7
-            const retirado = retirados.has(a.id)
-            return (
-              <div key={a.id} className="flex items-center gap-2 text-xs py-1 px-1 rounded hover:bg-[var(--bg-card-hover)]">
-                <span className="font-mono text-[var(--text-muted)] w-8 flex-shrink-0">{a.num_catalogo || '—'}</span>
-                <span className={`flex-1 truncate ${retirado ? 'line-through text-[var(--text-muted)]' : ''}`}>{a.nome}</span>
-                <span className="w-16 flex-shrink-0 flex justify-center">
-                  <input type="checkbox" checked={marcado} disabled={desabilitadoClass} onChange={() => toggleClassificado(a.id)} />
-                </span>
-                <span className="w-16 flex-shrink-0 flex justify-center">
-                  <input type="checkbox" checked={retirado} onChange={() => toggleRetirado(a.id)} />
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-      {msg && <p className="text-sm text-green-400">{msg}</p>}
-      <button onClick={salvar} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
         {saving ? 'Salvando...' : 'Salvar'}
       </button>
     </div>

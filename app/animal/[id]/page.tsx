@@ -214,7 +214,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
                 )}
                 {animal.finalista_marcha && (
                   <span className="text-xs font-bold px-2 py-1 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
-                    🏁 Classificado pra Final
+                    🏁 Entre os 7
                   </span>
                 )}
                 {animal.retirado && (

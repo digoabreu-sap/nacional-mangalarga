@@ -21,7 +21,6 @@ const MARCHAS = [
 const PER_PAGE = 30
 const CACHE_KEY = 'nm_cache_pista'
 const PENDENTES_KEY = 'nm_votos_pendentes'
-const DESTACAR_FINALISTAS_KEY = 'nm_destacar_finalistas'
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
@@ -98,14 +97,6 @@ function HomeContent() {
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
-  // Preferencia por aparelho (localStorage) - liga/desliga so a REORDENACAO
-  // dos classificados pro topo. O selo/borda de destaque continuam
-  // aparecendo sempre, independente disso.
-  const [destacarFinalistas, setDestacarFinalistas] = useState(() => {
-    if (typeof window === 'undefined') return true
-    const v = localStorage.getItem(DESTACAR_FINALISTAS_KEY)
-    return v === null ? true : v === '1'
-  })
   // Marca os catalogos ja consultados (independente de ter achado resultado
   // ou nao) pra nao reconsultar toda hora - so o que ainda nao foi tentado
   // entra na proxima busca em lote.
@@ -358,6 +349,38 @@ function HomeContent() {
   // Voto direto no card, sem abrir a pagina do animal. Otimista: atualiza a
   // tela na hora, e so guarda pra tentar de novo depois se a rede falhar -
   // pensado pro sinal ruim de parque de exposicao.
+  // "Entre os 7" e "Retirado" sao controlados por qualquer usuario direto na
+  // lista, durante o evento ao vivo - mesmo espirito da votacao popular. As
+  // regras (max 7, nunca os dois ao mesmo tempo) sao aplicadas no banco; aqui
+  // so faz a atualizacao otimista e desfaz se o servidor recusar.
+  async function toggleEntreOs7(animal: Animal, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const anterior = { finalista_marcha: animal.finalista_marcha, retirado: animal.retirado }
+    const novoValor = !animal.finalista_marcha
+    setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, finalista_marcha: novoValor, retirado: novoValor ? false : a.retirado } : a))
+    const { error } = await supabase.rpc('nm_toggle_finalista_marcha', { p_animal_id: animal.id })
+    if (error) {
+      setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, ...anterior } : a))
+      setCategoriaToast(error.message?.includes('Ja tem 7') ? 'Já tem 7 animais entre os 7 nessa categoria' : 'Não foi possível atualizar')
+      setTimeout(() => setCategoriaToast(null), 4000)
+    }
+  }
+
+  async function toggleRetirado(animal: Animal, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const anterior = { finalista_marcha: animal.finalista_marcha, retirado: animal.retirado }
+    const novoValor = !animal.retirado
+    setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, retirado: novoValor, finalista_marcha: novoValor ? false : a.finalista_marcha } : a))
+    const { error } = await supabase.rpc('nm_toggle_retirado', { p_animal_id: animal.id })
+    if (error) {
+      setAnimals(prev => prev.map(a => a.id === animal.id ? { ...a, ...anterior } : a))
+      setCategoriaToast('Não foi possível atualizar')
+      setTimeout(() => setCategoriaToast(null), 4000)
+    }
+  }
+
   async function votarInline(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
@@ -484,10 +507,13 @@ function HomeContent() {
       .select('*', { count: 'exact' })
       .range(from, to)
 
-    // Classificados pra final de marcha (ate 7) primeiro, o resto segue pelo
-    // numero do catalogo - opcional, cada usuario liga/desliga no aparelho.
-    if (destacarFinalistas) query = query.order('finalista_marcha', { ascending: false })
-    query = query.order('num_catalogo_int', { ascending: true, nullsFirst: false })
+    // "Entre os 7" sempre no topo, "Retirado" sempre no final - o resto no
+    // meio, pelo numero do catalogo. Um animal nunca e as duas coisas ao
+    // mesmo tempo, entao esses 3 criterios juntos bastam.
+    query = query
+      .order('finalista_marcha', { ascending: false })
+      .order('retirado', { ascending: true })
+      .order('num_catalogo_int', { ascending: true, nullsFirst: false })
 
     if (activeFilter) {
       if (activeFilter.type === 'haras') query = query.eq('haras', activeFilter.value)
@@ -525,7 +551,7 @@ function HomeContent() {
     // Em erro de rede (comum no parque com sinal fraco): nao apaga a lista
     // que ja estava na tela, deixa o que tinha (cache ou fetch anterior).
     setLoading(false)
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter, searchMode, destacarFinalistas])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, searchMode])
 
   useEffect(() => {
     if (!categoriaAtualCarregada) return
@@ -539,7 +565,7 @@ function HomeContent() {
       fetchAnimals(0, true)
     }, 300)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada, searchMode, destacarFinalistas])
+  }, [search, marcha, categoria, campeonatoFilter, activeFilter, fetchAnimals, categoriaAtualCarregada, searchMode])
 
   useEffect(() => {
     if (!sentinelRef.current || !hasMore) return
@@ -787,19 +813,6 @@ function HomeContent() {
 
       <div className="flex-1 px-4 py-3 max-w-2xl mx-auto w-full">
         {campeonatoFilter && <CampeaoCampeonatoBanner campeonatoNome={campeonatoFilter} />}
-        <label className="flex items-center gap-2 mb-2 text-xs text-[var(--text-muted)] cursor-pointer select-none w-fit">
-          <input
-            type="checkbox"
-            checked={destacarFinalistas}
-            onChange={e => {
-              const v = e.target.checked
-              setDestacarFinalistas(v)
-              try { localStorage.setItem(DESTACAR_FINALISTAS_KEY, v ? '1' : '0') } catch { /* localStorage indisponivel */ }
-            }}
-            className="w-3.5 h-3.5 accent-[var(--accent)]"
-          />
-          🏁 Destacar classificados no topo
-        </label>
         <div className="space-y-2">
           {animals.map(animal => {
             const votos = votosPorAnimal[animal.id] || 0
@@ -831,12 +844,36 @@ function HomeContent() {
                         Excl. Marcha
                       </span>
                     )}
-                    {animal.finalista_marcha && (
+                    {/* "Entre os 7" e "Retirado" sao controlados por qualquer
+                        usuario, ao vivo, direto na lista - por isso viram
+                        botoes (nao so selos) fora do modo de busca. */}
+                    {!searchMode ? (
+                      <button
+                        onClick={e => toggleEntreOs7(animal, e)}
+                        disabled={animal.retirado}
+                        aria-label={animal.finalista_marcha ? 'Remover dos Entre os 7' : 'Marcar como Entre os 7'}
+                        className={`text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1 transition-all active:scale-90 ${
+                          animal.finalista_marcha ? 'bg-[var(--accent-dark)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                        } ${animal.retirado ? 'opacity-40' : ''}`}
+                      >
+                        🏁 Entre os 7
+                      </button>
+                    ) : animal.finalista_marcha && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
-                        🏁 Classificado pra Final
+                        🏁 Entre os 7
                       </span>
                     )}
-                    {animal.retirado && (
+                    {!searchMode ? (
+                      <button
+                        onClick={e => toggleRetirado(animal, e)}
+                        aria-label={animal.retirado ? 'Desmarcar retirado' : 'Marcar como retirado'}
+                        className={`text-xs font-bold px-1.5 py-0.5 rounded transition-all active:scale-90 ${
+                          animal.retirado ? 'bg-black/20 text-[var(--text-primary)]' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                        }`}
+                      >
+                        Retirado
+                      </button>
+                    ) : animal.retirado && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-black/10 text-[var(--text-secondary)]">
                         Retirado
                       </span>
