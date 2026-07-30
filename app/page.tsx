@@ -31,12 +31,7 @@ type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_j
 // As listas guardam a ORDEM manual (indice = posicao-1 na marcha, 1a7 e
 // 8a13) - nao sao so um Set, a posicao dentro do array e que vira a
 // "posicao na marcha" mostrada/usada na simulacao.
-// exclMarcha marca reclassificacao ao vivo pra Exclusivamente Marcha (ex:
-// animal reprovado na morfologia na entrada de pista - Art. 37 do
-// regulamento) quando o cadastro previo do catalogo ainda nao reflete isso.
-// Nao e exclusivo com entre7/oitavaATreze/retirado (sao conceitos
-// independentes - um so diz em qual campeonato o animal compete).
-type MarcacoesCategoria = { entre7: number[]; oitavaATreze: number[]; retirado: number[]; exclMarcha: number[] }
+type MarcacoesCategoria = { entre7: number[]; oitavaATreze: number[]; retirado: number[] }
 // Uma entrada por categoria+marcha - "Entre os 7"/"8 a 13" sao limites da
 // final daquela marcha especifica, nao do evento inteiro.
 type MarcacoesLocais = Record<string, MarcacoesCategoria>
@@ -75,14 +70,9 @@ function removerDe(lista: number[], id: number) {
 }
 function marcacoesDaCategoria(v: MarcacoesLocais, categoria: string, tipoMarcha: string): MarcacoesCategoria {
   const atual = v[chaveMarcacoes(categoria, tipoMarcha)]
-  // "oitavaATreze"/"exclMarcha" sao mais novos que o resto do formato -
-  // dados salvos antes deles nao tem essas chaves, entao cai pro default vazio.
-  return {
-    entre7: atual?.entre7 || [],
-    oitavaATreze: atual?.oitavaATreze || [],
-    retirado: atual?.retirado || [],
-    exclMarcha: atual?.exclMarcha || [],
-  }
+  // "oitavaATreze" e mais novo que o resto do formato - dados salvos antes
+  // dele nao tem essa chave, entao cai pro default vazio.
+  return { entre7: atual?.entre7 || [], oitavaATreze: atual?.oitavaATreze || [], retirado: atual?.retirado || [] }
 }
 
 export default function Home() {
@@ -474,7 +464,6 @@ function HomeContent() {
     const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
     const ordemCombinada: Animal[] = []
     const retiradosIds = new Set<number>()
-    const exclMarchaLocalIds = new Set<number>()
     for (const chave of chaves) {
       const [categoria, tipoMarcha] = chave.split('||')
       const marc = marcacoesDaCategoria(marcacoesLocais, categoria, tipoMarcha)
@@ -490,12 +479,7 @@ function HomeContent() {
         if (a) { ordemCombinada.push(a); posicoes.set(a.id, i + 1 + MAX_ENTRE_7) }
       })
       for (const id of marc.retirado) retiradosIds.add(id)
-      for (const id of marc.exclMarcha) exclMarchaLocalIds.add(id)
     }
-    // O cadastro previo do catalogo pode nao refletir uma reclassificacao
-    // que so aconteceu ao vivo (animal reprovado na morfologia na entrada de
-    // pista vira Excl. Marcha) - por isso a marcacao local tambem conta.
-    const ehExclMarcha = (a: Animal) => a.tipo_campeonato !== 'Convencional' || a.tambem_excl_marcha || exclMarchaLocalIds.has(a.id)
 
     const morfologiaBruta = (a: Animal) => {
       const bruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_morfologia : null
@@ -508,7 +492,7 @@ function HomeContent() {
 
     const candidatos: { animal: Animal; valor: number; desempate: number }[] = []
     for (const a of ordemCombinada) {
-      if (ehExclMarcha(a)) continue
+      if (a.tipo_campeonato !== 'Convencional') continue
       const morfologia = morfologiaBruta(a)
       if (!Number.isFinite(morfologia)) continue
       const retiradosAFrente = morfologiaRetirados.filter(m => m < morfologia).length
@@ -516,7 +500,7 @@ function HomeContent() {
 
       const posicao = posicoes.get(a.id)!
       const explMarchaAFrente = ordemCombinada.filter(
-        o => (posicoes.get(o.id) || 0) < posicao && ehExclMarcha(o)
+        o => (posicoes.get(o.id) || 0) < posicao && o.tipo_campeonato !== 'Convencional'
       ).length
 
       // Desempate: animais ate 39 meses (Potro/Potra) usam Morfologia, acima
@@ -567,7 +551,7 @@ function HomeContent() {
         removerDe(oitavaATreze, animal.id)
         removerDe(retirado, animal.id)
       }
-      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado, exclMarcha: atual.exclMarcha } }
+      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -595,7 +579,7 @@ function HomeContent() {
         removerDe(entre7, animal.id)
         removerDe(retirado, animal.id)
       }
-      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado, exclMarcha: atual.exclMarcha } }
+      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -618,29 +602,7 @@ function HomeContent() {
         removerDe(entre7, animal.id)
         removerDe(oitavaATreze, animal.id)
       }
-      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado, exclMarcha: atual.exclMarcha } }
-      salvarMarcacoesLocais(next)
-      return next
-    })
-  }
-
-  // Reclassificacao ao vivo pra Exclusivamente Marcha (ex: animal reprovado
-  // na morfologia na entrada de pista, vira excl. marcha preservando o
-  // campeonato em que esta inscrito - Art. 37 do regulamento). Nao e
-  // exclusiva com as outras tags: um animal pode estar "Entre os 7" e
-  // marcado como Excl. Marcha ao mesmo tempo (sao conceitos independentes -
-  // um e posicao na marcha, o outro e em qual campeonato ele compete).
-  function toggleExclMarchaLocal(animal: Animal, e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
-    setMarcacoesLocais(prev => {
-      const atual = marcacoesDaCategoria(prev, animal.categoria, animal.tipo_marcha)
-      const exclMarcha = atual.exclMarcha.slice()
-      const idx = exclMarcha.indexOf(animal.id)
-      if (idx >= 0) exclMarcha.splice(idx, 1)
-      else exclMarcha.push(animal.id)
-      const next = { ...prev, [chave]: { ...atual, exclMarcha } }
+      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -1152,12 +1114,11 @@ function HomeContent() {
             const oitavaAtiva = !adminDefiniuEntreOsSeteOuRetirado && marcLocal.oitavaATreze.includes(animal.id)
             const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcLocal.retirado.includes(animal.id)
             const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode && simulacaoHabilitada
-            // O cadastro previo do catalogo pode nao refletir uma
-            // reclassificacao que so aconteceu ao vivo (animal reprovado na
-            // morfologia na entrada de pista vira Excl. Marcha) - por isso a
-            // marcacao local (quando existe) tambem conta.
-            const exclMarchaAtivo = animal.tipo_campeonato !== 'Convencional' || animal.tambem_excl_marcha ||
-              (podeEditarLocal && marcLocal.exclMarcha.includes(animal.id))
+            // Sempre segue o cadastro do animal no catalogo - nunca editavel
+            // (o regulamento nao permite reclassificacao ao vivo dessa
+            // informacao, e o cadastro (Catalogo PDF/base de dados) e a
+            // unica fonte oficial).
+            const exclMarchaAtivo = animal.tipo_campeonato !== 'Convencional' || animal.tambem_excl_marcha
             const idxEntre7 = marcLocal.entre7.indexOf(animal.id)
             const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
@@ -1183,21 +1144,10 @@ function HomeContent() {
                     }`}>
                       {animal.tipo_marcha === 'MB' ? 'M. Batida' : 'M. Picada'}
                     </span>
-                    {animal.tipo_campeonato !== 'Convencional' || animal.tambem_excl_marcha ? (
+                    {exclMarchaAtivo && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-600/10 text-red-600 dark:text-red-400">
                         Excl. Marcha
                       </span>
-                    ) : podeEditarLocal && (
-                      <button
-                        onClick={e => toggleExclMarchaLocal(animal, e)}
-                        aria-label={exclMarchaAtivo ? 'Desmarcar Excl. Marcha (marcação pessoal)' : 'Marcar como Excl. Marcha (marcação pessoal)'}
-                        title="O cadastro nao marca esse animal como Excl. Marcha - use aqui se ele foi reclassificado ao vivo (marcação pessoal)"
-                        className={`text-xs font-bold px-1.5 py-0.5 rounded transition-all active:scale-90 ${
-                          exclMarchaAtivo ? 'bg-red-600 text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
-                        }`}
-                      >
-                        Excl. Marcha
-                      </button>
                     )}
                     {/* Se o admin ja definiu isso pra categoria, vira selo
                         informativo (dado oficial, compartilhado). Senao, cada
