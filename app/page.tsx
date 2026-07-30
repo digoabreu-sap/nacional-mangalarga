@@ -10,7 +10,7 @@ import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
 import CampeaoCampeonatoBanner from '@/components/CampeaoCampeonatoBanner'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
-import { formatColocacaoOficial } from '@/lib/colocacao'
+import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 const MARCHAS = [
@@ -22,14 +22,19 @@ const PER_PAGE = 30
 const CACHE_KEY = 'nm_cache_pista'
 const PENDENTES_KEY = 'nm_votos_pendentes'
 const MARCACOES_LOCAIS_KEY = 'nm_marcacoes_locais'
+const MAX_ENTRE_7 = 7
+const MAX_OITAVA_A_TREZE = 6
 
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null }
-type MarcacoesCategoria = { entre7: number[]; retirado: number[] }
-// Uma entrada por categoria+marcha - "Entre os 7" e um limite da final
-// daquela marcha especifica, nao do evento inteiro.
+// As listas guardam a ORDEM manual (indice = posicao-1 na marcha, 1a7 e
+// 8a13) - nao sao so um Set, a posicao dentro do array e que vira a
+// "posicao na marcha" mostrada/usada na simulacao.
+type MarcacoesCategoria = { entre7: number[]; oitavaATreze: number[]; retirado: number[] }
+// Uma entrada por categoria+marcha - "Entre os 7"/"8 a 13" sao limites da
+// final daquela marcha especifica, nao do evento inteiro.
 type MarcacoesLocais = Record<string, MarcacoesCategoria>
 const FASE_LABEL: Record<string, string> = { morfologia: 'Morfologia', marcha: 'Marcha', funcional: 'Prova Funcional' }
 
@@ -60,8 +65,15 @@ function lerMarcacoesLocais(): MarcacoesLocais {
 function salvarMarcacoesLocais(v: MarcacoesLocais) {
   try { localStorage.setItem(MARCACOES_LOCAIS_KEY, JSON.stringify(v)) } catch { /* localStorage indisponivel */ }
 }
+function removerDe(lista: number[], id: number) {
+  const idx = lista.indexOf(id)
+  if (idx >= 0) lista.splice(idx, 1)
+}
 function marcacoesDaCategoria(v: MarcacoesLocais, categoria: string, tipoMarcha: string): MarcacoesCategoria {
-  return v[chaveMarcacoes(categoria, tipoMarcha)] || { entre7: [], retirado: [] }
+  const atual = v[chaveMarcacoes(categoria, tipoMarcha)]
+  // "oitavaATreze" e mais novo que o resto do formato - dados salvos antes
+  // dele nao tem essa chave, entao cai pro default vazio.
+  return { entre7: atual?.entre7 || [], oitavaATreze: atual?.oitavaATreze || [], retirado: atual?.retirado || [] }
 }
 
 export default function Home() {
@@ -392,45 +404,139 @@ function HomeContent() {
   )
   const animalsExibidos = useMemo(() => {
     if (adminDefiniuEntreOsSeteOuRetirado) return animals
-    const emAlta: Animal[] = []
+    const porId = new Map(animals.map(a => [a.id, a]))
+    const usados = new Set<number>()
+    const entre7Ordenados: Animal[] = []
+    const oitavaOrdenados: Animal[] = []
+    // Normalmente so tem 1 categoria+marcha na lista (visao travada da
+    // pista), mas percorre todas as combinacoes presentes por seguranca.
+    const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
+    for (const chave of chaves) {
+      const [categoria, tipoMarcha] = chave.split('||')
+      const marc = marcacoesDaCategoria(marcacoesLocais, categoria, tipoMarcha)
+      for (const id of marc.entre7) {
+        const a = porId.get(id)
+        if (a && !usados.has(id)) { entre7Ordenados.push(a); usados.add(id) }
+      }
+      for (const id of marc.oitavaATreze) {
+        const a = porId.get(id)
+        if (a && !usados.has(id)) { oitavaOrdenados.push(a); usados.add(id) }
+      }
+    }
     const meio: Animal[] = []
     const baixa: Animal[] = []
     for (const a of animals) {
+      if (usados.has(a.id)) continue
       const marc = marcacoesDaCategoria(marcacoesLocais, a.categoria, a.tipo_marcha)
-      if (marc.entre7.includes(a.id)) emAlta.push(a)
-      else if (marc.retirado.includes(a.id)) baixa.push(a)
+      if (marc.retirado.includes(a.id)) baixa.push(a)
       else meio.push(a)
     }
-    return [...emAlta, ...meio, ...baixa]
+    return [...entre7Ordenados, ...oitavaOrdenados, ...meio, ...baixa]
   }, [animals, adminDefiniuEntreOsSeteOuRetirado, marcacoesLocais])
 
-  // "Entre os 7" e "Retirado": o admin pode definir no painel (Categoria) -
-  // dado compartilhado, valendo pra todo mundo. Se o admin NAO definiu nada
-  // pra essa categoria, cada usuario pode marcar por conta propria, mas so
-  // no proprio aparelho (localStorage) - nunca mexe no banco nem aparece pra
-  // outros usuarios. O limite de 7 e por categoria+marcha (a final daquela
-  // marcha), nao do evento inteiro - por isso as marcacoes sao guardadas
-  // numa chave separada por categoria+marcha.
+  // Simula a posicao na marcha (1 a 13: 7 do "Entre os 7" + 6 do "8 a 13",
+  // na ordem em que o usuario organizou os cards) e a nota de classificacao
+  // = morfologia oficial + posicao na marcha - qtd de animais Exclusivamente
+  // Marcha a frente dele (eles ocupam posicao na marcha mas nao disputam o
+  // campeonato Convencional). So calcula pra quem ja tem morfologia oficial
+  // publicada. Depois ordena por essa nota (menor = melhor, mesma logica do
+  // "Total" da apuracao oficial) e usa a mesma tabela de colocacao
+  // (Campeao/Reservado/Premios/Mencoes) ja usada no resto do site. Isso e
+  // so uma simulacao pessoal - nunca e salva como resultado oficial.
+  const simulacaoMarcha = useMemo(() => {
+    const posicoes = new Map<number, number>()
+    const classificacoes = new Map<number, { valor: number; label: string }>()
+    if (adminDefiniuEntreOsSeteOuRetirado) return { posicoes, classificacoes }
+    const porId = new Map(animals.map(a => [a.id, a]))
+    const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
+    const ordemCombinada: Animal[] = []
+    for (const chave of chaves) {
+      const [categoria, tipoMarcha] = chave.split('||')
+      const marc = marcacoesDaCategoria(marcacoesLocais, categoria, tipoMarcha)
+      for (const id of [...marc.entre7, ...marc.oitavaATreze]) {
+        const a = porId.get(id)
+        if (a) ordemCombinada.push(a)
+      }
+    }
+    ordemCombinada.forEach((a, i) => posicoes.set(a.id, i + 1))
+
+    const candidatos: { animal: Animal; valor: number }[] = []
+    for (const a of ordemCombinada) {
+      if (a.tipo_campeonato !== 'Convencional') continue
+      const morfBruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_morfologia : null
+      const morfologia = morfBruta != null ? parseFloat(morfBruta) : NaN
+      if (!Number.isFinite(morfologia)) continue
+      const posicao = posicoes.get(a.id)!
+      const explMarchaAFrente = ordemCombinada.filter(
+        o => (posicoes.get(o.id) || 0) < posicao && o.tipo_campeonato !== 'Convencional'
+      ).length
+      candidatos.push({ animal: a, valor: morfologia + posicao - explMarchaAFrente })
+    }
+    candidatos.sort((x, y) => x.valor - y.valor)
+    candidatos.forEach((c, i) => {
+      classificacoes.set(c.animal.id, { valor: c.valor, label: formatColocacaoMarcha(String(i + 1)) })
+    })
+    return { posicoes, classificacoes }
+  }, [animals, marcacoesLocais, adminDefiniuEntreOsSeteOuRetirado, resultadosPorCatalogo])
+
+  // "Entre os 7" / "8 a 13" / "Retirado": o admin pode definir no painel
+  // (Categoria) - dado compartilhado, valendo pra todo mundo. Se o admin NAO
+  // definiu nada pra essa categoria, cada usuario pode marcar por conta
+  // propria, mas so no proprio aparelho (localStorage) - nunca mexe no banco
+  // nem aparece pra outros usuarios. Os limites (7 e 6) sao por
+  // categoria+marcha (a final daquela marcha), nao do evento inteiro. Uma
+  // tag e sempre exclusiva das outras duas - marcar uma tira as demais.
   function toggleEntreOs7Local(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
     const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
     setMarcacoesLocais(prev => {
-      const atual = prev[chave] || { entre7: [], retirado: [] }
-      const entre7 = new Set(atual.entre7)
-      const retirado = new Set(atual.retirado)
-      if (entre7.has(animal.id)) {
-        entre7.delete(animal.id)
+      const atual = marcacoesDaCategoria(prev, animal.categoria, animal.tipo_marcha)
+      const entre7 = atual.entre7.slice()
+      const oitavaATreze = atual.oitavaATreze.slice()
+      const retirado = atual.retirado.slice()
+      const idx = entre7.indexOf(animal.id)
+      if (idx >= 0) {
+        entre7.splice(idx, 1)
       } else {
-        if (entre7.size >= 7) {
-          setCategoriaToast('Você já marcou 7 animais como Entre os 7 nessa categoria')
+        if (entre7.length >= MAX_ENTRE_7) {
+          setCategoriaToast(`Você já marcou ${MAX_ENTRE_7} animais como Entre os 7 nessa categoria`)
           setTimeout(() => setCategoriaToast(null), 4000)
           return prev
         }
-        entre7.add(animal.id)
-        retirado.delete(animal.id)
+        entre7.push(animal.id)
+        removerDe(oitavaATreze, animal.id)
+        removerDe(retirado, animal.id)
       }
-      const next = { ...prev, [chave]: { entre7: [...entre7], retirado: [...retirado] } }
+      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado } }
+      salvarMarcacoesLocais(next)
+      return next
+    })
+  }
+
+  function toggleOitavaATrezeLocal(animal: Animal, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
+    setMarcacoesLocais(prev => {
+      const atual = marcacoesDaCategoria(prev, animal.categoria, animal.tipo_marcha)
+      const entre7 = atual.entre7.slice()
+      const oitavaATreze = atual.oitavaATreze.slice()
+      const retirado = atual.retirado.slice()
+      const idx = oitavaATreze.indexOf(animal.id)
+      if (idx >= 0) {
+        oitavaATreze.splice(idx, 1)
+      } else {
+        if (oitavaATreze.length >= MAX_OITAVA_A_TREZE) {
+          setCategoriaToast(`Você já marcou ${MAX_OITAVA_A_TREZE} animais como 8 a 13 nessa categoria`)
+          setTimeout(() => setCategoriaToast(null), 4000)
+          return prev
+        }
+        oitavaATreze.push(animal.id)
+        removerDe(entre7, animal.id)
+        removerDe(retirado, animal.id)
+      }
+      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -441,16 +547,39 @@ function HomeContent() {
     e.stopPropagation()
     const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
     setMarcacoesLocais(prev => {
-      const atual = prev[chave] || { entre7: [], retirado: [] }
-      const entre7 = new Set(atual.entre7)
-      const retirado = new Set(atual.retirado)
-      if (retirado.has(animal.id)) {
-        retirado.delete(animal.id)
+      const atual = marcacoesDaCategoria(prev, animal.categoria, animal.tipo_marcha)
+      const entre7 = atual.entre7.slice()
+      const oitavaATreze = atual.oitavaATreze.slice()
+      const retirado = atual.retirado.slice()
+      const idx = retirado.indexOf(animal.id)
+      if (idx >= 0) {
+        retirado.splice(idx, 1)
       } else {
-        retirado.add(animal.id)
-        entre7.delete(animal.id)
+        retirado.push(animal.id)
+        removerDe(entre7, animal.id)
+        removerDe(oitavaATreze, animal.id)
       }
-      const next = { ...prev, [chave]: { entre7: [...entre7], retirado: [...retirado] } }
+      const next = { ...prev, [chave]: { entre7, oitavaATreze, retirado } }
+      salvarMarcacoesLocais(next)
+      return next
+    })
+  }
+
+  // Move o animal pra cima/baixo DENTRO do proprio subgrupo (Entre os 7 so
+  // troca de posicao com outro Entre os 7, 8 a 13 so com outro 8 a 13) -
+  // e essa ordem que vira a posicao simulada na marcha.
+  function moverAnimalLocal(animal: Animal, grupo: 'entre7' | 'oitavaATreze', direcao: -1 | 1, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
+    setMarcacoesLocais(prev => {
+      const atual = marcacoesDaCategoria(prev, animal.categoria, animal.tipo_marcha)
+      const lista = atual[grupo].slice()
+      const idx = lista.indexOf(animal.id)
+      const novoIdx = idx + direcao
+      if (idx < 0 || novoIdx < 0 || novoIdx >= lista.length) return prev
+      ;[lista[idx], lista[novoIdx]] = [lista[novoIdx], lista[idx]]
+      const next = { ...prev, [chave]: { ...atual, [grupo]: lista } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -896,8 +1025,13 @@ function HomeContent() {
             const resultado = animal.num_catalogo ? resultadosPorCatalogo[animal.num_catalogo] : undefined
             const marcLocal = marcacoesDaCategoria(marcacoesLocais, animal.categoria, animal.tipo_marcha)
             const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.finalista_marcha : marcLocal.entre7.includes(animal.id)
+            const oitavaAtiva = !adminDefiniuEntreOsSeteOuRetirado && marcLocal.oitavaATreze.includes(animal.id)
             const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcLocal.retirado.includes(animal.id)
             const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode
+            const idxEntre7 = marcLocal.entre7.indexOf(animal.id)
+            const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
+            const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
+            const classificacaoSimulada = simulacaoMarcha.classificacoes.get(animal.id)
             return (
             <Link
               key={animal.id}
@@ -907,6 +1041,7 @@ function HomeContent() {
                 retiradoAtivo ? 'opacity-50' : ''
               } ${
                 finalistaAtivo ? 'border-[var(--accent-dark)] shadow-[0_0_0_1px_var(--accent-dark)]' :
+                oitavaAtiva ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' :
                 ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
               }`}
             >
@@ -925,22 +1060,75 @@ function HomeContent() {
                     )}
                     {/* Se o admin ja definiu isso pra categoria, vira selo
                         informativo (dado oficial, compartilhado). Senao, cada
-                        usuario marca por conta propria (so no aparelho dele). */}
+                        usuario marca por conta propria (so no aparelho dele),
+                        podendo tambem reordenar dentro do proprio grupo pra
+                        simular a posicao na marcha. */}
                     {podeEditarLocal ? (
                       <button
                         onClick={e => toggleEntreOs7Local(animal, e)}
-                        disabled={retiradoAtivo}
                         aria-label={finalistaAtivo ? 'Remover dos Entre os 7 (marcação pessoal)' : 'Marcar como Entre os 7 (marcação pessoal)'}
                         title="Marcação pessoal - só aparece pra você"
                         className={`text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1 transition-all active:scale-90 ${
                           finalistaAtivo ? 'bg-[var(--accent-dark)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
-                        } ${retiradoAtivo ? 'opacity-40' : ''}`}
+                        }`}
                       >
                         🏁 Entre os 7
                       </button>
                     ) : finalistaAtivo && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
                         🏁 Entre os 7
+                      </span>
+                    )}
+                    {finalistaAtivo && podeEditarLocal && (
+                      <span className="flex items-center">
+                        <button
+                          onClick={e => moverAnimalLocal(animal, 'entre7', -1, e)}
+                          disabled={idxEntre7 <= 0}
+                          aria-label="Mover pra cima (Entre os 7)"
+                          title="Mover pra cima"
+                          className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] disabled:opacity-25 active:scale-90"
+                        >▲</button>
+                        <button
+                          onClick={e => moverAnimalLocal(animal, 'entre7', 1, e)}
+                          disabled={idxEntre7 < 0 || idxEntre7 >= marcLocal.entre7.length - 1}
+                          aria-label="Mover pra baixo (Entre os 7)"
+                          title="Mover pra baixo"
+                          className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] disabled:opacity-25 active:scale-90"
+                        >▼</button>
+                      </span>
+                    )}
+                    {podeEditarLocal ? (
+                      <button
+                        onClick={e => toggleOitavaATrezeLocal(animal, e)}
+                        aria-label={oitavaAtiva ? 'Remover do 8 a 13 (marcação pessoal)' : 'Marcar como 8 a 13 (marcação pessoal)'}
+                        title="Marcação pessoal - só aparece pra você"
+                        className={`text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1 transition-all active:scale-90 ${
+                          oitavaAtiva ? 'bg-[var(--accent)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                        }`}
+                      >
+                        8 a 13
+                      </button>
+                    ) : oitavaAtiva && (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent)] text-white flex items-center gap-1">
+                        8 a 13
+                      </span>
+                    )}
+                    {oitavaAtiva && podeEditarLocal && (
+                      <span className="flex items-center">
+                        <button
+                          onClick={e => moverAnimalLocal(animal, 'oitavaATreze', -1, e)}
+                          disabled={idxOitava <= 0}
+                          aria-label="Mover pra cima (8 a 13)"
+                          title="Mover pra cima"
+                          className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] disabled:opacity-25 active:scale-90"
+                        >▲</button>
+                        <button
+                          onClick={e => moverAnimalLocal(animal, 'oitavaATreze', 1, e)}
+                          disabled={idxOitava < 0 || idxOitava >= marcLocal.oitavaATreze.length - 1}
+                          aria-label="Mover pra baixo (8 a 13)"
+                          title="Mover pra baixo"
+                          className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] disabled:opacity-25 active:scale-90"
+                        >▼</button>
                       </span>
                     )}
                     {podeEditarLocal ? (
@@ -983,6 +1171,16 @@ function HomeContent() {
                   {resultado && (
                     <p className="text-xs text-[var(--text-muted)] mt-1">
                       Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
+                    </p>
+                  )}
+                  {/* Marcha/Classificacao aqui sao so uma simulacao pessoal
+                      (baseada em como o usuario organizou os cards) - some
+                      assim que o resultado oficial da marcha for publicado.
+                      Mostrado em vermelho de proposito, pra nao confundir
+                      com dado oficial. */}
+                  {podeEditarLocal && posicaoSimulada != null && !resultado?.pontuacao_andamento && (
+                    <p className="text-xs font-semibold mt-1 text-red-600 dark:text-red-400">
+                      Simulação ao vivo: Marcha {posicaoSimulada}ª{classificacaoSimulada && ` · Classificação: ${classificacaoSimulada.label}`}
                     </p>
                   )}
                 </div>
