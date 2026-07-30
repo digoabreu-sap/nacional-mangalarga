@@ -96,10 +96,6 @@ function HomeContent() {
   // Marcha da mesma categoria aparecem juntos, sem segregar em duas telas.
   const categoriaParam = searchParams.get('categoria')
   const marchaParam = searchParams.get('marcha')
-  // Diagnostico temporario (task de investigacao do bug Excl. Marcha) - so
-  // aparece com ?debug_excl=1 na URL, nunca pro publico geral. Remover
-  // depois que o campo certo pra Excl. Marcha for confirmado com o cliente.
-  const debugExcl = searchParams.get('debug_excl') === '1'
 
   // Modo padrao: trava na categoria "em pista" configurada no admin, sem
   // filtro editavel - evita o usuario ficar mexendo em filtro toda hora.
@@ -1315,7 +1311,7 @@ function HomeContent() {
                   {animal.num_catalogo && (
                     <div className="text-center">
                       <p className="text-xs text-[var(--text-muted)] uppercase">Catalogo</p>
-                      <p className={`text-3xl font-bold leading-none ${exclMarchaAtivo ? 'text-red-600 dark:text-red-500' : 'text-[var(--accent)]'}`}>{animal.num_catalogo}</p>
+                      <p className="text-3xl font-bold text-[var(--accent)] leading-none">{animal.num_catalogo}</p>
                     </div>
                   )}
                   {!searchMode && !retiradoAtivo && (
@@ -1340,11 +1336,6 @@ function HomeContent() {
                   <span>Pai: {animal.pai || '—'}</span>
                   <span>Mae: {animal.mae || '—'}</span>
                 </div>
-                {debugExcl && (
-                  <div className="mt-1 text-[10px] font-mono text-white bg-black/70 rounded px-1.5 py-0.5 break-all">
-                    DEBUG tipo_campeonato=&quot;{animal.tipo_campeonato}&quot; tambem_excl_marcha={String(animal.tambem_excl_marcha)} campeonato=&quot;{animal.campeonato}&quot;
-                  </div>
-                )}
               </div>
             </Link>
             )
