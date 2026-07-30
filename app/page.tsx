@@ -11,7 +11,6 @@ import CategoriaCombobox from '@/components/CategoriaCombobox'
 import CampeaoCampeonatoBanner from '@/components/CampeaoCampeonatoBanner'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
-import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 const MARCHAS = [
   { value: 'Todas', label: 'Todas' },
@@ -28,7 +27,7 @@ const MAX_OITAVA_A_TREZE = 6
 type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; value: string }
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
-type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null }
+type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null; simulacao_habilitada?: boolean }
 // As listas guardam a ORDEM manual (indice = posicao-1 na marcha, 1a7 e
 // 8a13) - nao sao so um Set, a posicao dentro do array e que vira a
 // "posicao na marcha" mostrada/usada na simulacao.
@@ -137,7 +136,6 @@ function HomeContent() {
   const [meuVotoPorCampeonato, setMeuVotoPorCampeonato] = useState<Record<string, number | null>>({})
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
-  const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
   // Comeca vazio (bate com o SSR, que nao tem acesso a localStorage) e so le
   // o valor real depois de montado, no useEffect abaixo - ler direto no
   // useState quebraria a hidratacao (server sempre renderiza vazio).
@@ -187,10 +185,6 @@ function HomeContent() {
       const atual = Array.isArray(data) ? data[0] : data
       if (atual?.numero) setWhatsappConfig(atual)
     })
-  }, [])
-
-  useEffect(() => {
-    getCategoriasMistas().then(setCategoriasMistas)
   }, [])
 
   // Resultado ja divulgado de cada animal visivel na lista, buscado em
@@ -311,6 +305,15 @@ function HomeContent() {
     }
   }, [searchMode, categoriaAtual, marchaAtual])
 
+  // O admin liga/desliga a simulacao (tags + reordenar + marcha/classificacao
+  // ao vivo) por pista, na aba Categoria. Trata ausencia do campo (RPC antiga,
+  // antes da migracao rodar) como ligado, pra nao "sumir" a feature no meio
+  // do evento so por causa do timing do deploy.
+  const simulacaoHabilitada = useMemo(() => {
+    const p = pistas.find(x => x.id === pistaSelecionadaId) || null
+    return p?.simulacao_habilitada !== false
+  }, [pistas, pistaSelecionadaId])
+
   // Votos da categoria em pista, mostrados na lista da Home. Busca de novo
   // (em vez de tentar remendar o estado local) sempre que alguem vota -
   // mais simples e evita contagem errada, e o volume de votos por
@@ -403,7 +406,7 @@ function HomeContent() {
     [animals]
   )
   const animalsExibidos = useMemo(() => {
-    if (adminDefiniuEntreOsSeteOuRetirado) return animals
+    if (adminDefiniuEntreOsSeteOuRetirado || !simulacaoHabilitada) return animals
     const porId = new Map(animals.map(a => [a.id, a]))
     const usados = new Set<number>()
     const entre7Ordenados: Animal[] = []
@@ -432,7 +435,7 @@ function HomeContent() {
       else meio.push(a)
     }
     return [...entre7Ordenados, ...oitavaOrdenados, ...meio, ...baixa]
-  }, [animals, adminDefiniuEntreOsSeteOuRetirado, marcacoesLocais])
+  }, [animals, adminDefiniuEntreOsSeteOuRetirado, marcacoesLocais, simulacaoHabilitada])
 
   // Simula a posicao na marcha (1 a 13: 7 do "Entre os 7" + 6 do "8 a 13",
   // na ordem em que o usuario organizou os cards) e a nota de classificacao
@@ -446,7 +449,7 @@ function HomeContent() {
   const simulacaoMarcha = useMemo(() => {
     const posicoes = new Map<number, number>()
     const classificacoes = new Map<number, { valor: number; label: string }>()
-    if (adminDefiniuEntreOsSeteOuRetirado) return { posicoes, classificacoes }
+    if (adminDefiniuEntreOsSeteOuRetirado || !simulacaoHabilitada) return { posicoes, classificacoes }
     const porId = new Map(animals.map(a => [a.id, a]))
     const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
     const ordemCombinada: Animal[] = []
@@ -477,7 +480,7 @@ function HomeContent() {
       classificacoes.set(c.animal.id, { valor: c.valor, label: formatColocacaoMarcha(String(i + 1)) })
     })
     return { posicoes, classificacoes }
-  }, [animals, marcacoesLocais, adminDefiniuEntreOsSeteOuRetirado, resultadosPorCatalogo])
+  }, [animals, marcacoesLocais, adminDefiniuEntreOsSeteOuRetirado, resultadosPorCatalogo, simulacaoHabilitada])
 
   // "Entre os 7" / "8 a 13" / "Retirado": o admin pode definir no painel
   // (Categoria) - dado compartilhado, valendo pra todo mundo. Se o admin NAO
@@ -567,15 +570,15 @@ function HomeContent() {
 
   // Move o animal pra cima/baixo DENTRO do proprio subgrupo (Entre os 7 so
   // troca de posicao com outro Entre os 7, 8 a 13 so com outro 8 a 13) -
-  // e essa ordem que vira a posicao simulada na marcha.
-  function moverAnimalLocal(animal: Animal, grupo: 'entre7' | 'oitavaATreze', direcao: -1 | 1, e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
+  // e essa ordem que vira a posicao simulada na marcha. Usada tanto pelas
+  // setas (1 passo por clique) quanto pelo arrastar (1 passo a cada tanto de
+  // deslocamento do dedo/mouse).
+  function moverAnimalPasso(categoria: string, tipoMarcha: string, animalId: number, grupo: 'entre7' | 'oitavaATreze', direcao: -1 | 1) {
+    const chave = chaveMarcacoes(categoria, tipoMarcha)
     setMarcacoesLocais(prev => {
-      const atual = marcacoesDaCategoria(prev, animal.categoria, animal.tipo_marcha)
+      const atual = marcacoesDaCategoria(prev, categoria, tipoMarcha)
       const lista = atual[grupo].slice()
-      const idx = lista.indexOf(animal.id)
+      const idx = lista.indexOf(animalId)
       const novoIdx = idx + direcao
       if (idx < 0 || novoIdx < 0 || novoIdx >= lista.length) return prev
       ;[lista[idx], lista[novoIdx]] = [lista[novoIdx], lista[idx]]
@@ -583,6 +586,49 @@ function HomeContent() {
       salvarMarcacoesLocais(next)
       return next
     })
+  }
+
+  function moverAnimalLocal(animal: Animal, grupo: 'entre7' | 'oitavaATreze', direcao: -1 | 1, e: React.MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    moverAnimalPasso(animal.categoria, animal.tipo_marcha, animal.id, grupo, direcao)
+  }
+
+  // Segurar e arrastar (pra cima/baixo) como alternativa as setas: a cada
+  // ARRASTO_LIMIAR_PX de deslocamento, avanca 1 posicao (mesma logica das
+  // setas), reaproveitando o passo unico em vez de tentar seguir o dedo em
+  // tempo real - mais simples e robusto no touch do celular.
+  const ARRASTO_LIMIAR_PX = 36
+  const arrastoRef = useRef<{ categoria: string; tipoMarcha: string; animalId: number; grupo: 'entre7' | 'oitavaATreze'; startY: number; limpar: () => void } | null>(null)
+
+  // Escuta o movimento no `window` (em vez de setPointerCapture no proprio
+  // handle) porque o card se reordena no DOM a cada passo - um elemento que
+  // se move na arvore pode perder a captura de ponteiro no meio do gesto.
+  // Ouvindo no window, o gesto continua ate o dedo/mouse soltar, nao importa
+  // quantas vezes o handle tenha mudado de posicao.
+  function onArrastoPointerDown(animal: Animal, grupo: 'entre7' | 'oitavaATreze', e: React.PointerEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (arrastoRef.current?.limpar) arrastoRef.current.limpar()
+    const estado = { categoria: animal.categoria, tipoMarcha: animal.tipo_marcha, animalId: animal.id, grupo, startY: e.clientY, limpar: () => {} }
+    const mover = (ev: PointerEvent) => {
+      const deltaY = ev.clientY - estado.startY
+      if (Math.abs(deltaY) >= ARRASTO_LIMIAR_PX) {
+        moverAnimalPasso(estado.categoria, estado.tipoMarcha, estado.animalId, estado.grupo, deltaY > 0 ? 1 : -1)
+        estado.startY = ev.clientY
+      }
+    }
+    const soltar = () => {
+      arrastoRef.current = null
+      window.removeEventListener('pointermove', mover)
+      window.removeEventListener('pointerup', soltar)
+      window.removeEventListener('pointercancel', soltar)
+    }
+    estado.limpar = soltar
+    arrastoRef.current = estado
+    window.addEventListener('pointermove', mover)
+    window.addEventListener('pointerup', soltar)
+    window.addEventListener('pointercancel', soltar)
   }
 
   async function votarInline(animal: Animal, e: React.MouseEvent) {
@@ -1027,7 +1073,7 @@ function HomeContent() {
             const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.finalista_marcha : marcLocal.entre7.includes(animal.id)
             const oitavaAtiva = !adminDefiniuEntreOsSeteOuRetirado && marcLocal.oitavaATreze.includes(animal.id)
             const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcLocal.retirado.includes(animal.id)
-            const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode
+            const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode && simulacaoHabilitada
             const idxEntre7 = marcLocal.entre7.indexOf(animal.id)
             const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
@@ -1053,7 +1099,7 @@ function HomeContent() {
                     }`}>
                       {animal.tipo_marcha === 'MB' ? 'M. Batida' : 'M. Picada'}
                     </span>
-                    {(ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) || animal.tambem_excl_marcha) && (
+                    {(animal.tipo_campeonato !== 'Convencional' || animal.tambem_excl_marcha) && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)]/10 text-[var(--accent-dark)]">
                         Excl. Marcha
                       </span>
@@ -1095,6 +1141,14 @@ function HomeContent() {
                           title="Mover pra baixo"
                           className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] disabled:opacity-25 active:scale-90"
                         >▼</button>
+                        <span
+                          onPointerDown={e => onArrastoPointerDown(animal, 'entre7', e)}
+                          onClick={e => e.stopPropagation()}
+                          aria-label="Segurar e arrastar pra reordenar (Entre os 7)"
+                          title="Segure e arraste pra cima/baixo"
+                          style={{ touchAction: 'none' }}
+                          className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] cursor-grab active:cursor-grabbing select-none"
+                        >⠿</span>
                       </span>
                     )}
                     {podeEditarLocal ? (
@@ -1129,6 +1183,14 @@ function HomeContent() {
                           title="Mover pra baixo"
                           className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] disabled:opacity-25 active:scale-90"
                         >▼</button>
+                        <span
+                          onPointerDown={e => onArrastoPointerDown(animal, 'oitavaATreze', e)}
+                          onClick={e => e.stopPropagation()}
+                          aria-label="Segurar e arrastar pra reordenar (8 a 13)"
+                          title="Segure e arraste pra cima/baixo"
+                          style={{ touchAction: 'none' }}
+                          className="w-5 h-5 flex items-center justify-center text-[var(--text-secondary)] cursor-grab active:cursor-grabbing select-none"
+                        >⠿</span>
                       </span>
                     )}
                     {podeEditarLocal ? (
@@ -1168,19 +1230,26 @@ function HomeContent() {
                     )}
                   </div>
                   <p className="text-sm text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
-                  {resultado && (
+                  {/* Marcha/Classificacao usam o mesmo label de sempre
+                      (Campeao/Reservado/Premios/Mencoes) - o numero cru so
+                      existe internamente, pra ordenar. Quando ainda nao ha
+                      resultado oficial dessas duas, mostra o valor simulado
+                      (baseado em como o usuario organizou os cards) em
+                      vermelho, no MESMO label, pra deixar claro que nao e
+                      oficial ainda. */}
+                  {(resultado || (podeEditarLocal && posicaoSimulada != null)) && (
                     <p className="text-xs text-[var(--text-muted)] mt-1">
-                      Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
-                    </p>
-                  )}
-                  {/* Marcha/Classificacao aqui sao so uma simulacao pessoal
-                      (baseada em como o usuario organizou os cards) - some
-                      assim que o resultado oficial da marcha for publicado.
-                      Mostrado em vermelho de proposito, pra nao confundir
-                      com dado oficial. */}
-                  {podeEditarLocal && posicaoSimulada != null && !resultado?.pontuacao_andamento && (
-                    <p className="text-xs font-semibold mt-1 text-red-600 dark:text-red-400">
-                      Simulação ao vivo: Marcha {posicaoSimulada}ª{classificacaoSimulada && ` · Classificação: ${classificacaoSimulada.label}`}
+                      Morfologia: {resultado?.pontuacao_morfologia ?? '—'} · Funcional: {resultado?.pontuacao_funcional ?? '—'} · Marcha:{' '}
+                      {resultado?.pontuacao_andamento ? (
+                        formatColocacaoMarcha(resultado.pontuacao_andamento)
+                      ) : podeEditarLocal && posicaoSimulada != null ? (
+                        <span className="text-red-600 dark:text-red-400 font-semibold">{formatColocacaoMarcha(String(posicaoSimulada))}</span>
+                      ) : '—'} · Classificação:{' '}
+                      {resultado?.colocacao ? (
+                        formatColocacaoOficial(resultado.colocacao)
+                      ) : podeEditarLocal && classificacaoSimulada ? (
+                        <span className="text-red-600 dark:text-red-400 font-semibold">{classificacaoSimulada.label}</span>
+                      ) : '—'}
                     </p>
                   )}
                 </div>

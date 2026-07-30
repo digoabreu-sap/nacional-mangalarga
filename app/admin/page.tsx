@@ -371,7 +371,7 @@ function VideoPanel({ token }: { token: string }) {
   )
 }
 
-type Pista = { id: number; categoria: string | null; tipo_marcha: string | null; fase_julgamento: string | null }
+type Pista = { id: number; categoria: string | null; tipo_marcha: string | null; fase_julgamento: string | null; simulacao_habilitada?: boolean }
 const FASES_JULGAMENTO = [
   { value: '', label: 'Nenhuma' },
   { value: 'morfologia', label: 'Morfologia' },
@@ -395,11 +395,17 @@ function CategoriaPanel({ token }: { token: string }) {
 
   useEffect(() => { load() }, [load])
 
-  async function salvarPista(id: number, categoria: string, tipoMarcha: 'MB' | 'MP', fase: string) {
+  async function salvarPista(id: number, categoria: string, tipoMarcha: 'MB' | 'MP', fase: string, simulacaoHabilitada: boolean) {
     const res = await fetch('/api/admin/categoria-atual', {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, categoria: categoria || null, tipo_marcha: categoria ? tipoMarcha : null, fase_julgamento: categoria ? (fase || null) : null }),
+      body: JSON.stringify({
+        id,
+        categoria: categoria || null,
+        tipo_marcha: categoria ? tipoMarcha : null,
+        fase_julgamento: categoria ? (fase || null) : null,
+        simulacao_habilitada: simulacaoHabilitada,
+      }),
     })
     if (res.ok) await load()
     return res.ok
@@ -423,12 +429,13 @@ function CategoriaPanel({ token }: { token: string }) {
 function PistaBlock({ pista, categorias, onSave, token }: {
   pista: Pista
   categorias: string[]
-  onSave: (id: number, categoria: string, marcha: 'MB' | 'MP', fase: string) => Promise<boolean>
+  onSave: (id: number, categoria: string, marcha: 'MB' | 'MP', fase: string, simulacaoHabilitada: boolean) => Promise<boolean>
   token: string
 }) {
   const [selected, setSelected] = useState(pista.categoria || '')
   const [selectedMarcha, setSelectedMarcha] = useState<'MB' | 'MP'>((pista.tipo_marcha as 'MB' | 'MP') || 'MB')
   const [selectedFase, setSelectedFase] = useState(pista.fase_julgamento || '')
+  const [simulacaoHabilitada, setSimulacaoHabilitada] = useState(pista.simulacao_habilitada !== false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [busca, setBusca] = useState('')
@@ -441,7 +448,7 @@ function PistaBlock({ pista, categorias, onSave, token }: {
   async function save() {
     setSaving(true)
     setMsg('')
-    const ok = await onSave(pista.id, selected, selectedMarcha, selectedFase)
+    const ok = await onSave(pista.id, selected, selectedMarcha, selectedFase, simulacaoHabilitada)
     setSaving(false)
     setMsg(ok ? 'Atualizada!' : 'Erro ao salvar')
     if (ok) setTimeout(() => setMsg(''), 3000)
@@ -498,6 +505,23 @@ function PistaBlock({ pista, categorias, onSave, token }: {
           ))}
         </div>
       </div>
+      <label className="flex items-center justify-between gap-2 bg-[var(--bg-primary)] rounded-lg p-3">
+        <span className="text-xs">
+          <span className="block font-medium">Simulação ao vivo pro público</span>
+          <span className="block text-[var(--text-muted)] mt-0.5">
+            Se ligado (padrão), quando você não definir os finalistas aqui embaixo, cada visitante pode marcar Entre os 7/8 a 13/Retirado e reordenar por conta própria (só no aparelho dele).
+          </span>
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={simulacaoHabilitada}
+          onClick={() => setSimulacaoHabilitada(v => !v)}
+          className={`flex-shrink-0 w-11 h-6 rounded-full transition-colors relative ${simulacaoHabilitada ? 'bg-[var(--accent)]' : 'bg-black/20'}`}
+        >
+          <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${simulacaoHabilitada ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+      </label>
       {msg && <p className="text-sm text-green-400">{msg}</p>}
       <button onClick={save} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
         {saving ? 'Salvando...' : 'Salvar'}
