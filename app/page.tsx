@@ -11,6 +11,7 @@ import CategoriaCombobox from '@/components/CategoriaCombobox'
 import CampeaoCampeonatoBanner from '@/components/CampeaoCampeonatoBanner'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
+import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 
 const MARCHAS = [
   { value: 'Todas', label: 'Todas' },
@@ -136,6 +137,10 @@ function HomeContent() {
   const [meuVotoPorCampeonato, setMeuVotoPorCampeonato] = useState<Record<string, number | null>>({})
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
+  const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    getCategoriasMistas().then(setCategoriasMistas)
+  }, [])
   // Comeca vazio (bate com o SSR, que nao tem acesso a localStorage) e so le
   // o valor real depois de montado, no useEffect abaixo - ler direto no
   // useState quebraria a hidratacao (server sempre renderiza vazio).
@@ -1117,8 +1122,12 @@ function HomeContent() {
             // Sempre segue o cadastro do animal no catalogo - nunca editavel
             // (o regulamento nao permite reclassificacao ao vivo dessa
             // informacao, e o cadastro (Catalogo PDF/base de dados) e a
-            // unica fonte oficial).
-            const exclMarchaAtivo = animal.tipo_campeonato !== 'Convencional' || animal.tambem_excl_marcha
+            // unica fonte oficial). Usa a mesma logica ja aplicada na pagina
+            // do animal (task #13): so conta tipo_campeonato != Convencional
+            // quando a categoria+marcha realmente tem os dois modos - senao
+            // vira falso-positivo (categoria inteira cadastrada com um so
+            // tipo_campeonato que nao seja literalmente "Convencional").
+            const exclMarchaAtivo = ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) || animal.tambem_excl_marcha
             const idxEntre7 = marcLocal.entre7.indexOf(animal.id)
             const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
