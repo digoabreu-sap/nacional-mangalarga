@@ -490,7 +490,7 @@ function HomeContent() {
       .map(a => (a ? morfologiaBruta(a) : NaN))
       .filter(Number.isFinite)
 
-    const candidatos: { animal: Animal; valor: number; funcional: number }[] = []
+    const candidatos: { animal: Animal; valor: number; desempate: number }[] = []
     for (const a of ordemCombinada) {
       if (a.tipo_campeonato !== 'Convencional') continue
       const morfologia = morfologiaBruta(a)
@@ -503,12 +503,19 @@ function HomeContent() {
         o => (posicoes.get(o.id) || 0) < posicao && o.tipo_campeonato !== 'Convencional'
       ).length
 
-      const funcBruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_funcional : null
-      const funcional = funcBruta != null ? parseFloat(funcBruta) : Infinity
+      // Desempate: animais ate 39 meses (Potro/Potra) usam Morfologia, acima
+      // disso usam Prova Funcional - regra oficial (regulamento ABCCMM).
+      const ehJovem = /^potr[ao]\b/i.test(a.categoria)
+      const desempate = ehJovem
+        ? morfologiaAjustada
+        : (() => {
+            const funcBruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_funcional : null
+            return funcBruta != null ? parseFloat(funcBruta) : Infinity
+          })()
 
-      candidatos.push({ animal: a, valor: morfologiaAjustada + posicao - explMarchaAFrente, funcional })
+      candidatos.push({ animal: a, valor: morfologiaAjustada + posicao - explMarchaAFrente, desempate })
     }
-    candidatos.sort((x, y) => x.valor - y.valor || x.funcional - y.funcional)
+    candidatos.sort((x, y) => x.valor - y.valor || x.desempate - y.desempate)
     candidatos.forEach((c, i) => {
       classificacoes.set(c.animal.id, { valor: c.valor, label: formatColocacaoMarcha(String(i + 1)) })
     })
