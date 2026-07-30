@@ -27,7 +27,10 @@ type Suggestion = { label: string; type: 'haras' | 'criador' | 'expositor'; valu
 type VotoPendente = { usuarioId: number; animalId: number; campeonato: string }
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 type Pista = { id: number; categoria: string; tipo_marcha: string | null; fase_julgamento: string | null }
-type MarcacoesLocais = { entre7: number[]; retirado: number[] }
+type MarcacoesCategoria = { entre7: number[]; retirado: number[] }
+// Uma entrada por categoria+marcha - "Entre os 7" e um limite da final
+// daquela marcha especifica, nao do evento inteiro.
+type MarcacoesLocais = Record<string, MarcacoesCategoria>
 const FASE_LABEL: Record<string, string> = { morfologia: 'Morfologia', marcha: 'Marcha', funcional: 'Prova Funcional' }
 
 function lerVotosPendentes(): VotoPendente[] {
@@ -40,14 +43,25 @@ function salvarVotosPendentes(v: VotoPendente[]) {
 // "Entre os 7" / "Retirado" marcados pelo proprio usuario (fallback quando o
 // admin nao define nada pra categoria) - vive so no aparelho dele, nunca vai
 // pro banco nem e visto por outros usuarios.
+function chaveMarcacoes(categoria: string, tipoMarcha: string): string {
+  return `${categoria}||${tipoMarcha}`
+}
 function lerMarcacoesLocais(): MarcacoesLocais {
   try {
     const raw = JSON.parse(localStorage.getItem(MARCACOES_LOCAIS_KEY) || 'null')
-    return { entre7: Array.isArray(raw?.entre7) ? raw.entre7 : [], retirado: Array.isArray(raw?.retirado) ? raw.retirado : [] }
-  } catch { return { entre7: [], retirado: [] } }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
+    // Formato antigo (antes de existir por categoria) guardava entre7/retirado
+    // direto na raiz, sem saber de qual categoria eram - descarta em vez de
+    // aplicar o limite de 7 errado numa categoria nova.
+    if (Array.isArray((raw as { entre7?: unknown }).entre7) || Array.isArray((raw as { retirado?: unknown }).retirado)) return {}
+    return raw
+  } catch { return {} }
 }
 function salvarMarcacoesLocais(v: MarcacoesLocais) {
   try { localStorage.setItem(MARCACOES_LOCAIS_KEY, JSON.stringify(v)) } catch { /* localStorage indisponivel */ }
+}
+function marcacoesDaCategoria(v: MarcacoesLocais, categoria: string, tipoMarcha: string): MarcacoesCategoria {
+  return v[chaveMarcacoes(categoria, tipoMarcha)] || { entre7: [], retirado: [] }
 }
 
 export default function Home() {
@@ -115,7 +129,7 @@ function HomeContent() {
   // Comeca vazio (bate com o SSR, que nao tem acesso a localStorage) e so le
   // o valor real depois de montado, no useEffect abaixo - ler direto no
   // useState quebraria a hidratacao (server sempre renderiza vazio).
-  const [marcacoesLocais, setMarcacoesLocais] = useState<MarcacoesLocais>({ entre7: [], retirado: [] })
+  const [marcacoesLocais, setMarcacoesLocais] = useState<MarcacoesLocais>({})
   useEffect(() => {
     setMarcacoesLocais(lerMarcacoesLocais())
   }, [])
@@ -378,14 +392,13 @@ function HomeContent() {
   )
   const animalsExibidos = useMemo(() => {
     if (adminDefiniuEntreOsSeteOuRetirado) return animals
-    const entre7Set = new Set(marcacoesLocais.entre7)
-    const retiradoSet = new Set(marcacoesLocais.retirado)
     const emAlta: Animal[] = []
     const meio: Animal[] = []
     const baixa: Animal[] = []
     for (const a of animals) {
-      if (entre7Set.has(a.id)) emAlta.push(a)
-      else if (retiradoSet.has(a.id)) baixa.push(a)
+      const marc = marcacoesDaCategoria(marcacoesLocais, a.categoria, a.tipo_marcha)
+      if (marc.entre7.includes(a.id)) emAlta.push(a)
+      else if (marc.retirado.includes(a.id)) baixa.push(a)
       else meio.push(a)
     }
     return [...emAlta, ...meio, ...baixa]
@@ -395,25 +408,29 @@ function HomeContent() {
   // dado compartilhado, valendo pra todo mundo. Se o admin NAO definiu nada
   // pra essa categoria, cada usuario pode marcar por conta propria, mas so
   // no proprio aparelho (localStorage) - nunca mexe no banco nem aparece pra
-  // outros usuarios.
+  // outros usuarios. O limite de 7 e por categoria+marcha (a final daquela
+  // marcha), nao do evento inteiro - por isso as marcacoes sao guardadas
+  // numa chave separada por categoria+marcha.
   function toggleEntreOs7Local(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
+    const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
     setMarcacoesLocais(prev => {
-      const entre7 = new Set(prev.entre7)
-      const retirado = new Set(prev.retirado)
+      const atual = prev[chave] || { entre7: [], retirado: [] }
+      const entre7 = new Set(atual.entre7)
+      const retirado = new Set(atual.retirado)
       if (entre7.has(animal.id)) {
         entre7.delete(animal.id)
       } else {
         if (entre7.size >= 7) {
-          setCategoriaToast('Você já marcou 7 animais como Entre os 7')
+          setCategoriaToast('Você já marcou 7 animais como Entre os 7 nessa categoria')
           setTimeout(() => setCategoriaToast(null), 4000)
           return prev
         }
         entre7.add(animal.id)
         retirado.delete(animal.id)
       }
-      const next = { entre7: [...entre7], retirado: [...retirado] }
+      const next = { ...prev, [chave]: { entre7: [...entre7], retirado: [...retirado] } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -422,16 +439,18 @@ function HomeContent() {
   function toggleRetiradoLocal(animal: Animal, e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
+    const chave = chaveMarcacoes(animal.categoria, animal.tipo_marcha)
     setMarcacoesLocais(prev => {
-      const entre7 = new Set(prev.entre7)
-      const retirado = new Set(prev.retirado)
+      const atual = prev[chave] || { entre7: [], retirado: [] }
+      const entre7 = new Set(atual.entre7)
+      const retirado = new Set(atual.retirado)
       if (retirado.has(animal.id)) {
         retirado.delete(animal.id)
       } else {
         retirado.add(animal.id)
         entre7.delete(animal.id)
       }
-      const next = { entre7: [...entre7], retirado: [...retirado] }
+      const next = { ...prev, [chave]: { entre7: [...entre7], retirado: [...retirado] } }
       salvarMarcacoesLocais(next)
       return next
     })
@@ -875,8 +894,9 @@ function HomeContent() {
             const ehLider = !searchMode && animal.id === liderId
             const jaVotei = !searchMode && animal.campeonato != null && meuVotoPorCampeonato[animal.campeonato] === animal.id
             const resultado = animal.num_catalogo ? resultadosPorCatalogo[animal.num_catalogo] : undefined
-            const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.finalista_marcha : marcacoesLocais.entre7.includes(animal.id)
-            const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcacoesLocais.retirado.includes(animal.id)
+            const marcLocal = marcacoesDaCategoria(marcacoesLocais, animal.categoria, animal.tipo_marcha)
+            const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.finalista_marcha : marcLocal.entre7.includes(animal.id)
+            const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcLocal.retirado.includes(animal.id)
             const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode
             return (
             <Link
