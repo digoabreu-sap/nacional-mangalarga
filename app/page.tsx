@@ -439,13 +439,23 @@ function HomeContent() {
 
   // Simula a posicao na marcha (1 a 13: 7 do "Entre os 7" + 6 do "8 a 13",
   // na ordem em que o usuario organizou os cards) e a nota de classificacao
-  // = morfologia oficial + posicao na marcha - qtd de animais Exclusivamente
-  // Marcha a frente dele (eles ocupam posicao na marcha mas nao disputam o
-  // campeonato Convencional). So calcula pra quem ja tem morfologia oficial
-  // publicada. Depois ordena por essa nota (menor = melhor, mesma logica do
-  // "Total" da apuracao oficial) e usa a mesma tabela de colocacao
-  // (Campeao/Reservado/Premios/Mencoes) ja usada no resto do site. Isso e
-  // so uma simulacao pessoal - nunca e salva como resultado oficial.
+  // = morfologia ajustada + posicao na marcha - qtd de animais Exclusivamente
+  // Marcha a frente dele na marcha (eles ocupam posicao na marcha mas nao
+  // disputam o campeonato Convencional).
+  //
+  // Morfologia ajustada (confirmado com o apurador oficial): quando um
+  // animal e Retirado antes de completar os finalistas, os animais que
+  // estavam atras dele na morfologia sobem 1 posicao cada - a colocacao de
+  // morfologia nunca fica com "buraco". Ex.: se os colocados 4 e 5 da
+  // morfologia forem retirados, quem era 7 na morfologia passa a ser 5
+  // (7 - 2 retirados a frente).
+  //
+  // So calcula pra quem ja tem morfologia oficial publicada. Depois ordena
+  // por essa nota (menor = melhor, mesma logica do "Total" da apuracao
+  // oficial), desempatando por quem tem melhor nota na funcional, e usa a
+  // mesma tabela de colocacao (Campeao/Reservado/Premios/Mencoes) ja usada
+  // no resto do site. Isso e so uma simulacao pessoal - nunca e salva como
+  // resultado oficial.
   const simulacaoMarcha = useMemo(() => {
     const posicoes = new Map<number, number>()
     const classificacoes = new Map<number, { valor: number; label: string }>()
@@ -453,29 +463,52 @@ function HomeContent() {
     const porId = new Map(animals.map(a => [a.id, a]))
     const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
     const ordemCombinada: Animal[] = []
+    const retiradosIds = new Set<number>()
     for (const chave of chaves) {
       const [categoria, tipoMarcha] = chave.split('||')
       const marc = marcacoesDaCategoria(marcacoesLocais, categoria, tipoMarcha)
-      for (const id of [...marc.entre7, ...marc.oitavaATreze]) {
+      // "8 a 13" sempre comeca na posicao 8, mesmo que "Entre os 7" ainda
+      // nao esteja completo (7 vagas) - as posicoes sao fixas por tag, nao
+      // dependem de quantos ja foram marcados.
+      marc.entre7.forEach((id, i) => {
         const a = porId.get(id)
-        if (a) ordemCombinada.push(a)
-      }
+        if (a) { ordemCombinada.push(a); posicoes.set(a.id, i + 1) }
+      })
+      marc.oitavaATreze.forEach((id, i) => {
+        const a = porId.get(id)
+        if (a) { ordemCombinada.push(a); posicoes.set(a.id, i + 1 + MAX_ENTRE_7) }
+      })
+      for (const id of marc.retirado) retiradosIds.add(id)
     }
-    ordemCombinada.forEach((a, i) => posicoes.set(a.id, i + 1))
 
-    const candidatos: { animal: Animal; valor: number }[] = []
+    const morfologiaBruta = (a: Animal) => {
+      const bruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_morfologia : null
+      return bruta != null ? parseFloat(bruta) : NaN
+    }
+    const morfologiaRetirados = [...retiradosIds]
+      .map(id => porId.get(id))
+      .map(a => (a ? morfologiaBruta(a) : NaN))
+      .filter(Number.isFinite)
+
+    const candidatos: { animal: Animal; valor: number; funcional: number }[] = []
     for (const a of ordemCombinada) {
       if (a.tipo_campeonato !== 'Convencional') continue
-      const morfBruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_morfologia : null
-      const morfologia = morfBruta != null ? parseFloat(morfBruta) : NaN
+      const morfologia = morfologiaBruta(a)
       if (!Number.isFinite(morfologia)) continue
+      const retiradosAFrente = morfologiaRetirados.filter(m => m < morfologia).length
+      const morfologiaAjustada = morfologia - retiradosAFrente
+
       const posicao = posicoes.get(a.id)!
       const explMarchaAFrente = ordemCombinada.filter(
         o => (posicoes.get(o.id) || 0) < posicao && o.tipo_campeonato !== 'Convencional'
       ).length
-      candidatos.push({ animal: a, valor: morfologia + posicao - explMarchaAFrente })
+
+      const funcBruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.pontuacao_funcional : null
+      const funcional = funcBruta != null ? parseFloat(funcBruta) : Infinity
+
+      candidatos.push({ animal: a, valor: morfologiaAjustada + posicao - explMarchaAFrente, funcional })
     }
-    candidatos.sort((x, y) => x.valor - y.valor)
+    candidatos.sort((x, y) => x.valor - y.valor || x.funcional - y.funcional)
     candidatos.forEach((c, i) => {
       classificacoes.set(c.animal.id, { valor: c.valor, label: formatColocacaoMarcha(String(i + 1)) })
     })
