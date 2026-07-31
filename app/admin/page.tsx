@@ -738,6 +738,18 @@ function normalizarTextoComparacao(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
+// nm_campeonatos.nome vem cru ("Convencional - MB - Cavalo Adulto"), mas a
+// aba Campeonatos que o usuario ve mostra so a categoria + um selo MB/MP
+// (Convencional/Exclusivamente Marcha sao modalidade, nao aparecem no
+// nome - unificados numa linha so la, task #16). Reproduz esse mesmo
+// formato aqui pra bater visualmente - so acrescenta a modalidade quando
+// nao for Convencional (senao nao da pra distinguir as duas linhas no
+// seletor).
+function nomeExibicaoCampeonato(c: { categoria: string; tipo_marcha: string; tipo_campeonato: string }): string {
+  const sufixo = c.tipo_campeonato !== 'Convencional' ? ` · ${c.tipo_campeonato}` : ''
+  return `${c.categoria} (${c.tipo_marcha})${sufixo}`
+}
+
 function montarLinhasEdit(animais: AnimalOpt[], resultados: ResultadoManualRow[]): LinhaEdit[] {
   return animais
     .map(a => {
@@ -808,7 +820,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
 
   const campeonato = campeonatos.find(c => String(c.id) === selectedId) || null
   const campeonatosFiltrados = busca.trim()
-    ? campeonatos.filter(c => c.nome.toLowerCase().includes(busca.trim().toLowerCase()) || String(c.id) === selectedId)
+    ? campeonatos.filter(c => nomeExibicaoCampeonato(c).toLowerCase().includes(busca.trim().toLowerCase()) || String(c.id) === selectedId)
     : campeonatos
 
   const loadDados = useCallback(async () => {
@@ -859,7 +871,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
       pularProximoLoadRef.current = true
       setLinhasEdit(aplicarPdfNasLinhas(data, linhasBase))
       setSelectedId(String(encontrado.id))
-      setPdfMsg(`PDF aplicado (${data.tipo_competicao || 'resultado'}) em "${encontrado.nome}" - revise e clique em Salvar Todos.`)
+      setPdfMsg(`PDF aplicado (${data.tipo_competicao || 'resultado'}) em "${nomeExibicaoCampeonato(encontrado)}" - revise e clique em Salvar Todos.`)
     } else {
       setPdfParseado(data)
       setPdfMsg(`PDF lido (${data.tipo_competicao || 'resultado'}): ${data.tipo_campeonato} - ${data.tipo_marcha} ${data.categoria}. Nao achei essa categoria na lista - selecione a categoria certa e clique em "Aplicar PDF Carregado".`)
@@ -939,7 +951,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
                   String(p.id) === selectedId ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
-                <span className="truncate">{p.nome}</span>
+                <span className="truncate">{nomeExibicaoCampeonato(p)}</span>
                 <span className="flex-shrink-0 font-mono text-[var(--text-muted)]">{p.registrados}/{p.total_animais}</span>
               </button>
             ))}
@@ -975,7 +987,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
       />
       <select value={selectedId} onChange={e => setSelectedId(e.target.value)} className={inputClass}>
         <option value="">Selecione a categoria...</option>
-        {campeonatosFiltrados.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        {campeonatosFiltrados.map(c => <option key={c.id} value={c.id}>{nomeExibicaoCampeonato(c)}</option>)}
       </select>
 
       {campeonato && (

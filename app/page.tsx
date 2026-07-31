@@ -10,7 +10,7 @@ import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
 import CampeaoCampeonatoBanner from '@/components/CampeaoCampeonatoBanner'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
-import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
+import { formatColocacaoOficial, formatColocacaoMarcha, normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 import { tipoDaCategoriaEspecial } from '@/lib/campeoesDosCampeoes'
 
@@ -848,6 +848,9 @@ function HomeContent() {
         num_catalogo: string; nome: string; categoria: string; tipo_marcha: string
         registro: string | null; haras: string | null; expositor: string | null; ordem: number
       }[]
+      // Ordem por numero de catalogo (nao pela ordem que o admin inseriu em
+      // Campeoes) - mais facil de achar um animal especifico na lista.
+      linhas.sort((a, b) => (parseInt(a.num_catalogo, 10) || 0) - (parseInt(b.num_catalogo, 10) || 0))
       const animaisEspeciais: Animal[] = linhas.map((l, i) => ({
         id: -(i + 1),
         id_catalogo: 0,
@@ -1211,7 +1214,18 @@ function HomeContent() {
             // quando a categoria+marcha realmente tem os dois modos - senao
             // vira falso-positivo (categoria inteira cadastrada com um so
             // tipo_campeonato que nao seja literalmente "Convencional").
-            const exclMarchaAtivo = ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) || animal.tambem_excl_marcha
+            // Nas listas de Campeao dos Campeoes/Grande Campeonato, o
+            // animal pode estar ali por ter sido Campeao de Marcha da
+            // categoria dele (Art. 73 par. 5 do regulamento incorpora
+            // esses ao grupo pro julgamento do quesito Marcha) sem ter
+            // sido Campeao/Reservado da Categoria - nesse caso ele so
+            // disputa a marcha aqui dentro, igual um animal
+            // Exclusivamente Marcha, entao mostra o mesmo selo.
+            const campeaoDeMarchaSemCategoria = tipoDaCategoriaEspecial(categoria) !== null &&
+              normalizarColocacaoPorRank(resultado?.pontuacao_andamento ?? null)?.ordem === 1 &&
+              ![1, 2].includes(normalizarColocacao(resultado?.colocacao ?? null)?.ordem ?? -1)
+            const exclMarchaAtivo = ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) ||
+              animal.tambem_excl_marcha || campeaoDeMarchaSemCategoria
             const idxEntre7 = marcLocal.entre7.indexOf(animal.id)
             const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)

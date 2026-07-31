@@ -16,20 +16,23 @@ export async function GET(req: NextRequest) {
   if (!tipo_campeonato || !tipo_marcha || !categoria) {
     const [{ data: campeonatos }, { data: resultados }] = await Promise.all([
       supabase.from('nm_campeonatos').select('*').order('categoria'),
-      // So a colocacao (classificacao final) conta como "cadastrado" - uma
-      // linha com so morfologia/funcional preenchida ainda nao fecha o
-      // resultado da categoria.
-      supabase.from('nm_resultados').select('tipo_campeonato, tipo_marcha, categoria, colocacao').eq('tipo_prova', 'final'),
+      supabase.from('nm_resultados').select('tipo_campeonato, tipo_marcha, categoria, colocacao, origem').eq('tipo_prova', 'final'),
     ])
+    // "Pendente" = essa categoria+marcha ainda NAO tem nenhum resultado
+    // OFICIAL (origem 'abccmm') importado - so notas zeradas ou so
+    // cadastradas na mao ate agora. Assim que a sincronizacao trouxer
+    // qualquer oficial pra ela, some da lista (a sincronizacao automatica
+    // toma conta do resto sozinha, nao precisa mais de acompanhamento manual).
     const registrados = new Map<string, number>()
+    const temOficial = new Set<string>()
     for (const r of resultados || []) {
-      if (!r.colocacao) continue
       const key = `${r.tipo_campeonato}|${r.tipo_marcha}|${r.categoria}`
-      registrados.set(key, (registrados.get(key) || 0) + 1)
+      if (r.colocacao) registrados.set(key, (registrados.get(key) || 0) + 1)
+      if (r.origem === 'abccmm') temOficial.add(key)
     }
     const pendentes = (campeonatos || [])
+      .filter(c => !temOficial.has(`${c.tipo_campeonato}|${c.tipo_marcha}|${c.categoria}`))
       .map(c => ({ ...c, registrados: registrados.get(`${c.tipo_campeonato}|${c.tipo_marcha}|${c.categoria}`) || 0 }))
-      .filter(c => c.registrados < c.total_animais)
       .sort((a, b) => a.categoria.localeCompare(b.categoria) || a.tipo_marcha.localeCompare(b.tipo_marcha))
     return NextResponse.json({ campeonatos: campeonatos || [], pendentes })
   }
