@@ -6,7 +6,7 @@ import { normalizarColocacao } from '@/lib/colocacao'
 import { StatusCor, TemaCoresConfig, DEFAULT_CORES, STATUS_LABEL, corEfetiva, hexParaRgba } from '@/lib/temaCores'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
-type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'campeoes' | 'banners' | 'sobre' | 'whatsapp' | 'aparencia' | 'admins'
+type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'campeoes' | 'banners' | 'sobre' | 'whatsapp' | 'aparencia' | 'haras' | 'animais' | 'admins'
 
 const TAB_LABELS: Record<AbaAdmin, string> = {
   analytics: 'Analytics',
@@ -19,13 +19,15 @@ const TAB_LABELS: Record<AbaAdmin, string> = {
   sobre: 'Sobre',
   whatsapp: 'WhatsApp',
   aparencia: 'Aparência',
+  haras: 'Haras',
+  animais: 'Animais',
   admins: 'Admins',
 }
-const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'aparencia', 'admins']
+const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'aparencia', 'haras', 'animais', 'admins']
 // Checkboxes de permissao concedidas por aba - "admins" fica de fora (so
 // quem e is_master mexe em admins/permissoes, pra ninguem restrito se
 // autopromover).
-const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'aparencia']
+const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'aparencia', 'haras', 'animais']
 
 type Admin = { id: number; email: string; nome: string; is_master: boolean; permissoes: string[] }
 type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number; tamanho_pct: number }
@@ -146,6 +148,8 @@ export default function AdminPage() {
         {tabAtual === 'sobre' && <SobrePanel token={token} />}
         {tabAtual === 'whatsapp' && <WhatsappPanel token={token} />}
         {tabAtual === 'aparencia' && <AparenciaPanel token={token} />}
+        {tabAtual === 'haras' && <HarasPanel token={token} />}
+        {tabAtual === 'animais' && <AnimalExtraPanel token={token} />}
         {tabAtual === 'admins' && <AdminsPanel token={token} />}
       </div>
     </main>
@@ -2184,5 +2188,335 @@ function CampoOpacidade({ label, valor, onChange }: { label: string; valor: numb
       <span className="flex items-center justify-between">{label}<span className="font-mono">{valor}%</span></span>
       <input type="range" min={0} max={100} value={valor} onChange={e => onChange(Number(e.target.value))} />
     </label>
+  )
+}
+
+type Haras = {
+  id: number; nome: string; cidade: string | null; uf: string | null; expositor: string | null
+  site_url: string | null; instagram_url: string | null; telefone: string | null
+}
+type HarasForm = Partial<Haras> & { nome: string }
+
+// Cadastro de Haras (aba Haras) - pre-preenchido pela migracao a partir da
+// base de animais ja existente (nm_animais.haras), editado dai em diante
+// por aqui. Casa com o animal pelo NOME (nm_haras.nome === nm_animais.haras,
+// case-insensitive) - e o que faz o link "Haras" na pagina do animal ir
+// pra /haras/[nome] e mostrar o icone do Instagram.
+function HarasPanel({ token }: { token: string }) {
+  const [lista, setLista] = useState<Haras[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busca, setBusca] = useState('')
+  const [editando, setEditando] = useState<Haras | 'novo' | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  const [excluindo, setExcluindo] = useState<number | null>(null)
+  const [erro, setErro] = useState('')
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const res = await fetch('/api/admin/haras', { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setLista(data.haras || [])
+    setLoading(false)
+  }, [token])
+
+  useEffect(() => { load() }, [load])
+
+  const filtrada = busca.trim()
+    ? lista.filter(h => h.nome.toLowerCase().includes(busca.trim().toLowerCase()))
+    : lista
+
+  async function salvar(form: HarasForm) {
+    setSalvando(true)
+    setErro('')
+    const res = await fetch('/api/admin/haras', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    })
+    const data = await res.json()
+    setSalvando(false)
+    if (!res.ok) { setErro(data.error || 'Erro ao salvar'); return }
+    setEditando(null)
+    setMsg('Salvo!')
+    setTimeout(() => setMsg(''), 2000)
+    load()
+  }
+
+  async function excluir(id: number) {
+    setExcluindo(id)
+    await fetch('/api/admin/haras', {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    setExcluindo(null)
+    load()
+  }
+
+  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold">Haras</h3>
+      <p className="text-xs text-[var(--text-muted)]">
+        Cadastro dos haras exibidos na página de cada animal (clique no nome do haras leva pra cá) - já veio pré-preenchido com os haras da base de animais; edite pra completar site, Instagram e telefone.
+      </p>
+
+      <div className="flex gap-2">
+        <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Pesquisar haras..." className={inputClass} />
+        <button onClick={() => setEditando('novo')} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold flex-shrink-0">Novo</button>
+      </div>
+
+      {editando && (
+        <HarasFormFields
+          inicial={editando === 'novo' ? null : editando}
+          onSalvar={salvar}
+          onCancelar={() => { setEditando(null); setErro('') }}
+          salvando={salvando}
+          erro={erro}
+        />
+      )}
+      {msg && <p className="text-xs text-green-400">{msg}</p>}
+
+      {loading ? (
+        <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" /></div>
+      ) : (
+        <div className="space-y-1">
+          {filtrada.map(h => (
+            <div key={h.id} className="flex items-center gap-2 text-sm py-2 px-3 bg-[var(--bg-card)] rounded-lg border border-[var(--border)]">
+              <div className="flex-1 min-w-0">
+                <p className="truncate font-medium">{h.nome}</p>
+                <p className="truncate text-xs text-[var(--text-muted)]">
+                  {[h.cidade && h.uf ? `${h.cidade} - ${h.uf}` : h.cidade, h.expositor].filter(Boolean).join(' · ') || 'Sem dados adicionais ainda'}
+                </p>
+              </div>
+              <button onClick={() => setEditando(h)} className="text-xs text-[var(--accent)] flex-shrink-0">Editar</button>
+              <button onClick={() => excluir(h.id)} disabled={excluindo === h.id} className="text-xs text-red-400 flex-shrink-0 disabled:opacity-50">
+                {excluindo === h.id ? '...' : 'Excluir'}
+              </button>
+            </div>
+          ))}
+          {filtrada.length === 0 && <p className="text-xs text-[var(--text-muted)]">Nenhum haras encontrado.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HarasFormFields({ inicial, onSalvar, onCancelar, salvando, erro }: {
+  inicial: Haras | null
+  onSalvar: (form: HarasForm) => void
+  onCancelar: () => void
+  salvando: boolean
+  erro: string
+}) {
+  const [nome, setNome] = useState(inicial?.nome || '')
+  const [cidade, setCidade] = useState(inicial?.cidade || '')
+  const [uf, setUf] = useState(inicial?.uf || '')
+  const [expositor, setExpositor] = useState(inicial?.expositor || '')
+  const [siteUrl, setSiteUrl] = useState(inicial?.site_url || '')
+  const [instagramUrl, setInstagramUrl] = useState(inicial?.instagram_url || '')
+  const [telefone, setTelefone] = useState(inicial?.telefone || '')
+
+  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+
+  return (
+    <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
+      <input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome do haras" className={inputClass} />
+      <div className="grid grid-cols-2 gap-2">
+        <input value={cidade} onChange={e => setCidade(e.target.value)} placeholder="Cidade" className={inputClass} />
+        <input value={uf} onChange={e => setUf(e.target.value.toUpperCase())} placeholder="UF" maxLength={2} className={inputClass} />
+      </div>
+      <input value={expositor} onChange={e => setExpositor(e.target.value)} placeholder="Expositor" className={inputClass} />
+      <input value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="Site (https://...)" className={inputClass} />
+      <input value={instagramUrl} onChange={e => setInstagramUrl(e.target.value)} placeholder="Instagram (https://instagram.com/...)" className={inputClass} />
+      <input value={telefone} onChange={e => setTelefone(e.target.value)} placeholder="Telefone" className={inputClass} />
+      {erro && <p className="text-xs text-red-400">{erro}</p>}
+      <div className="flex gap-2">
+        <button
+          onClick={() => onSalvar({ id: inicial?.id, nome: nome.trim(), cidade, uf, expositor, site_url: siteUrl, instagram_url: instagramUrl, telefone })}
+          disabled={salvando || !nome.trim()}
+          className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+        >
+          {salvando ? 'Salvando...' : 'Salvar'}
+        </button>
+        <button onClick={onCancelar} className="px-4 py-2 bg-[var(--bg-card-hover)] rounded-lg text-xs font-semibold">Cancelar</button>
+      </div>
+    </div>
+  )
+}
+
+type AnimalBusca = { id: number; num_catalogo: string; nome: string; registro: string; categoria: string }
+type AnimalExtra = { registro: string; instagram_url: string | null; youtube_url: string | null; texto: string | null; visivel: boolean }
+type ResumoAnimalExtra = { total: number; visiveis: number }
+
+// Dados adicionais do animal (aba Animais) - Instagram, YouTube e um texto
+// livre, exibidos na pagina publica do animal. Chave pelo REGISTRO (nao
+// pelo numero de catalogo, que muda a cada evento) - por isso o fluxo e
+// "busca o animal por catalogo/nome -> edita pelo registro dele". O flag
+// "visivel" e individual (esconde da pagina publica sem apagar o
+// cadastro) - a ferramenta de Ocultar/Exibir Todos mexe em todo mundo de
+// uma vez.
+function AnimalExtraPanel({ token }: { token: string }) {
+  const [busca, setBusca] = useState('')
+  const [resultadosBusca, setResultadosBusca] = useState<AnimalBusca[]>([])
+  const [buscando, setBuscando] = useState(false)
+  const [selecionado, setSelecionado] = useState<AnimalBusca | null>(null)
+  const [instagramUrl, setInstagramUrl] = useState('')
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [texto, setTexto] = useState('')
+  const [visivel, setVisivel] = useState(true)
+  const [carregandoExtra, setCarregandoExtra] = useState(false)
+  const [salvando, setSalvando] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [resumo, setResumo] = useState<ResumoAnimalExtra | null>(null)
+  const [aplicandoEmMassa, setAplicandoEmMassa] = useState<'ocultar' | 'exibir' | null>(null)
+
+  const carregarResumo = useCallback(async () => {
+    const res = await fetch('/api/admin/animal-extra?resumo=1', { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setResumo({ total: data.total || 0, visiveis: data.visiveis || 0 })
+  }, [token])
+
+  useEffect(() => { carregarResumo() }, [carregarResumo])
+
+  useEffect(() => {
+    const termo = busca.trim()
+    if (termo.length < 2) { setResultadosBusca([]); return }
+    setBuscando(true)
+    const timeout = setTimeout(async () => {
+      const res = await fetch(`/api/admin/animal-extra?q=${encodeURIComponent(termo)}`, { headers: { 'Authorization': `Bearer ${token}` } })
+      const data = await res.json()
+      setResultadosBusca(data.animais || [])
+      setBuscando(false)
+    }, 300)
+    return () => clearTimeout(timeout)
+  }, [busca, token])
+
+  async function selecionar(animal: AnimalBusca) {
+    setSelecionado(animal)
+    setBusca('')
+    setResultadosBusca([])
+    setMsg('')
+    setCarregandoExtra(true)
+    const res = await fetch(`/api/admin/animal-extra?registro=${encodeURIComponent(animal.registro)}`, { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setInstagramUrl(data.extra?.instagram_url || '')
+    setYoutubeUrl(data.extra?.youtube_url || '')
+    setTexto(data.extra?.texto || '')
+    setVisivel(data.extra ? data.extra.visivel : true)
+    setCarregandoExtra(false)
+  }
+
+  async function salvar() {
+    if (!selecionado) return
+    setSalvando(true)
+    setMsg('')
+    const res = await fetch('/api/admin/animal-extra', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registro: selecionado.registro, instagram_url: instagramUrl, youtube_url: youtubeUrl, texto, visivel }),
+    })
+    setSalvando(false)
+    setMsg(res.ok ? 'Salvo!' : 'Erro ao salvar')
+    setTimeout(() => setMsg(''), 2000)
+    carregarResumo()
+  }
+
+  async function aplicarEmMassa(novoValor: boolean) {
+    setAplicandoEmMassa(novoValor ? 'exibir' : 'ocultar')
+    await fetch('/api/admin/animal-extra/visibilidade-em-massa', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visivel: novoValor }),
+    })
+    setAplicandoEmMassa(null)
+    setVisivel(novoValor)
+    carregarResumo()
+  }
+
+  const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold">Dados Adicionais do Animal</h3>
+      <p className="text-xs text-[var(--text-muted)]">
+        Instagram, YouTube e um texto livre, exibidos na página do animal. Ligado pelo número de registro (não pelo catálogo, que muda a cada evento) - busque o animal pelo nome ou catálogo pra editar.
+      </p>
+
+      <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
+        <p className="text-xs font-semibold">Visibilidade em massa</p>
+        <p className="text-[10px] text-[var(--text-muted)]">
+          {resumo ? `${resumo.visiveis} de ${resumo.total} cadastro(s) visível(is) na página do animal.` : 'Carregando...'}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => aplicarEmMassa(true)}
+            disabled={aplicandoEmMassa !== null}
+            className="px-3 py-1.5 bg-[var(--bg-card-hover)] rounded-lg text-xs font-semibold disabled:opacity-50"
+          >
+            {aplicandoEmMassa === 'exibir' ? 'Exibindo...' : 'Exibir Todos'}
+          </button>
+          <button
+            onClick={() => aplicarEmMassa(false)}
+            disabled={aplicandoEmMassa !== null}
+            className="px-3 py-1.5 bg-[var(--bg-card-hover)] rounded-lg text-xs font-semibold disabled:opacity-50"
+          >
+            {aplicandoEmMassa === 'ocultar' ? 'Ocultando...' : 'Ocultar Todos'}
+          </button>
+        </div>
+      </div>
+
+      <div className="relative">
+        <input
+          value={selecionado ? `${selecionado.num_catalogo} — ${selecionado.nome}` : busca}
+          onChange={e => { setBusca(e.target.value); setSelecionado(null) }}
+          placeholder="Buscar por nome, catálogo ou registro..."
+          className={inputClass}
+        />
+        {resultadosBusca.length > 0 && !selecionado && (
+          <div className="absolute z-10 mt-1 w-full bg-[var(--bg-card)] border border-[var(--border)] rounded-lg overflow-hidden shadow-lg max-h-56 overflow-y-auto">
+            {resultadosBusca.map(a => (
+              <button
+                key={a.id}
+                onClick={() => selecionar(a)}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-card-hover)] border-b border-[var(--border)] last:border-b-0"
+              >
+                <span className="font-mono text-[var(--text-muted)]">{a.num_catalogo}</span> — {a.nome}
+                <span className="block text-[var(--text-muted)]">{a.categoria} · Reg. {a.registro}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {buscando && <p className="text-[10px] text-[var(--text-muted)] mt-1">Buscando...</p>}
+      </div>
+
+      {selecionado && (
+        carregandoExtra ? (
+          <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" /></div>
+        ) : (
+          <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
+            <p className="text-xs text-[var(--text-muted)]">
+              Editando <span className="font-medium text-[var(--text-primary)]">{selecionado.nome}</span> · Reg. {selecionado.registro}
+            </p>
+            <input value={instagramUrl} onChange={e => setInstagramUrl(e.target.value)} placeholder="Instagram (https://instagram.com/...)" className={inputClass} />
+            <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="YouTube (https://youtube.com/...)" className={inputClass} />
+            <textarea value={texto} onChange={e => setTexto(e.target.value)} placeholder="Texto livre (histórico, descrição...)" rows={5} className={inputClass} />
+            <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+              <input type="checkbox" checked={visivel} onChange={e => setVisivel(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
+              Visível na página do animal
+            </label>
+            {msg && <p className="text-xs text-green-400">{msg}</p>}
+            <div className="flex gap-2">
+              <button onClick={salvar} disabled={salvando} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold disabled:opacity-50">
+                {salvando ? 'Salvando...' : 'Salvar'}
+              </button>
+              <button onClick={() => setSelecionado(null)} className="px-4 py-2 bg-[var(--bg-card-hover)] rounded-lg text-xs font-semibold">Trocar animal</button>
+            </div>
+          </div>
+        )
+      )}
+    </div>
   )
 }

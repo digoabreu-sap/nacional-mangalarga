@@ -21,6 +21,22 @@ function InfoRow({ label, value }: { label: string; value: string | null | undef
   )
 }
 
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2c-2.72 0-3.06.01-4.12.06-1.06.05-1.79.22-2.43.47-.66.26-1.22.6-1.77 1.16-.56.55-.9 1.11-1.16 1.77-.25.64-.42 1.37-.47 2.43C2 8.94 2 9.28 2 12s.01 3.06.06 4.12c.05 1.06.22 1.79.47 2.43.26.66.6 1.22 1.16 1.77.55.56 1.11.9 1.77 1.16.64.25 1.37.42 2.43.47C8.94 22 9.28 22 12 22s3.06-.01 4.12-.06c1.06-.05 1.79-.22 2.43-.47.66-.26 1.22-.6 1.77-1.16.56-.55.9-1.11 1.16-1.77.25-.64.42-1.37.47-2.43.05-1.06.06-1.4.06-4.12s-.01-3.06-.06-4.12c-.05-1.06-.22-1.79-.47-2.43-.26-.66-.6-1.22-1.16-1.77-.55-.56-1.11-.9-1.77-1.16-.64-.25-1.37-.42-2.43-.47C15.06 2.01 14.72 2 12 2m0 1.8c2.67 0 2.99.01 4.04.06.98.04 1.5.21 1.85.34.47.18.8.4 1.15.75.35.35.57.68.75 1.15.13.35.29.87.34 1.85.05 1.05.06 1.37.06 4.04s-.01 2.99-.06 4.04c-.04.98-.21 1.5-.34 1.85-.18.47-.4.8-.75 1.15-.35.35-.68.57-1.15.75-.35.13-.87.29-1.85.34-1.05.05-1.37.06-4.04.06s-2.99-.01-4.04-.06c-.98-.04-1.5-.21-1.85-.34-.47-.18-.8-.4-1.15-.75-.35-.35-.57-.68-.75-1.15-.13-.35-.29-.87-.34-1.85C3.81 14.99 3.8 14.67 3.8 12s.01-2.99.06-4.04c.04-.98.21-1.5.34-1.85.18-.47.4-.8.75-1.15.35-.35.68-.57 1.15-.75.35-.13.87-.29 1.85-.34C9.01 3.81 9.33 3.8 12 3.8m0 3.05a5.15 5.15 0 100 10.3 5.15 5.15 0 000-10.3m0 8.5a3.35 3.35 0 110-6.7 3.35 3.35 0 010 6.7m6.55-8.7a1.2 1.2 0 11-2.4 0 1.2 1.2 0 012.4 0" />
+    </svg>
+  )
+}
+
+function YoutubeIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M21.58 7.19a2.5 2.5 0 00-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42a2.5 2.5 0 00-1.77 1.77A26.1 26.1 0 002 12a26.1 26.1 0 00.42 4.81 2.5 2.5 0 001.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42a2.5 2.5 0 001.77-1.77A26.1 26.1 0 0022 12a26.1 26.1 0 00-.42-4.81M9.75 15.02V8.98L15.5 12l-5.75 3.02" />
+    </svg>
+  )
+}
+
 function GenealogyCard({ label, nome, registro }: { label: string; nome: string; registro: string }) {
   return (
     <div className="bg-[var(--bg-card)] rounded-lg p-3 border border-[var(--border)] flex-1 min-w-0">
@@ -71,6 +87,9 @@ function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) 
   )
 }
 
+type HarasInfo = { nome: string; instagram_url: string | null }
+type AnimalExtra = { instagram_url: string | null; youtube_url: string | null; texto: string | null }
+
 export default function AnimalDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const router = useRouter()
@@ -80,6 +99,8 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
   const [resultado, setResultado] = useState<ResultadoAnimal | null>(null)
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
+  const [harasInfo, setHarasInfo] = useState<HarasInfo | null>(null)
+  const [extra, setExtra] = useState<AnimalExtra | null>(null)
 
   useEffect(() => {
     supabase.rpc('nm_get_whatsapp_config').then(({ data }) => {
@@ -140,6 +161,24 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
     }
     loadResultados()
   }, [animal])
+
+  useEffect(() => {
+    if (!animal?.haras) { setHarasInfo(null); return }
+    supabase.rpc('nm_get_haras_by_nome', { p_nome: animal.haras }).then(({ data }) => {
+      const atual = Array.isArray(data) ? data[0] : data
+      setHarasInfo(atual || null)
+    })
+  }, [animal?.haras])
+
+  // Chave pelo REGISTRO (nao pelo catalogo, que muda a cada evento) - dados
+  // adicionais (Instagram/YouTube/texto) cadastrados pelo admin (aba Animais).
+  useEffect(() => {
+    if (!animal?.registro) { setExtra(null); return }
+    supabase.rpc('nm_get_animal_extra', { p_registro: animal.registro }).then(({ data }) => {
+      const atual = Array.isArray(data) ? data[0] : data
+      setExtra(atual || null)
+    })
+  }, [animal?.registro])
 
   const schedule = useMemo(() => (animal ? getAnimalSchedule(animal) : []), [animal])
 
@@ -223,7 +262,19 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
                   </span>
                 )}
               </div>
-              <h2 className="text-xl font-bold mb-1">{animal.nome}</h2>
+              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                <h2 className="text-xl font-bold">{animal.nome}</h2>
+                {extra?.instagram_url && (
+                  <a href={extra.instagram_url} target="_blank" rel="noopener noreferrer" aria-label="Instagram do animal" className="text-[var(--text-muted)] hover:text-[var(--accent)] flex-shrink-0">
+                    <InstagramIcon className="w-4 h-4" />
+                  </a>
+                )}
+                {extra?.youtube_url && (
+                  <a href={extra.youtube_url} target="_blank" rel="noopener noreferrer" aria-label="YouTube do animal" className="text-[var(--text-muted)] hover:text-[var(--accent)] flex-shrink-0">
+                    <YoutubeIcon className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
               <p className="text-sm text-[var(--text-secondary)]">{animal.campeonato}</p>
             </div>
             <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
@@ -342,9 +393,33 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
           <h3 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2">Propriedade</h3>
           <InfoRow label="Criador" value={animal.criador} />
           <InfoRow label="Expositor" value={animal.expositor} />
-          <InfoRow label="Haras" value={animal.haras} />
+          {animal.haras && (
+            <div className="flex justify-between items-start py-2 border-b border-[var(--border)]">
+              <span className="text-xs text-[var(--text-muted)] flex-shrink-0">Haras</span>
+              <span className="text-sm text-right ml-4 flex items-center justify-end gap-1.5">
+                {harasInfo ? (
+                  <Link href={`/haras/${encodeURIComponent(harasInfo.nome)}`} className="text-[var(--accent)] hover:underline">
+                    {animal.haras}
+                  </Link>
+                ) : animal.haras}
+                {harasInfo?.instagram_url && (
+                  <a href={harasInfo.instagram_url} target="_blank" rel="noopener noreferrer" aria-label="Instagram do haras" className="text-[var(--text-muted)] hover:text-[var(--accent)] flex-shrink-0">
+                    <InstagramIcon className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </span>
+            </div>
+          )}
           <InfoRow label="Cidade" value={animal.cidade && animal.uf ? `${animal.cidade} - ${animal.uf}` : animal.cidade} />
         </div>
+
+        {/* Texto livre (dados adicionais do animal, cadastrado pelo admin) */}
+        {extra?.texto && (
+          <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
+            <h3 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide mb-2">Sobre</h3>
+            <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{extra.texto}</p>
+          </div>
+        )}
 
         {/* Voting */}
         {!animal.retirado && <VotingPanel animalId={animal.id} campeonato={animal.campeonato} />}
