@@ -12,6 +12,7 @@ import CampeaoCampeonatoBanner from '@/components/CampeaoCampeonatoBanner'
 import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
+import { tipoDaCategoriaEspecial } from '@/lib/campeoesDosCampeoes'
 
 const MARCHAS = [
   { value: 'Todas', label: 'Todas' },
@@ -414,18 +415,26 @@ function HomeContent() {
   // pra essa categoria+marcha. Nesse ponto as marcacoes locais (Entre os
   // 7/8 a 13/Retirado) perderam a validade - o card ja mostra a
   // Classificacao oficial - entao paramos de usa-las pra exibir/editar e
-  // limpamos elas (efeito mais abaixo).
+  // limpamos elas (efeito mais abaixo). Tambem vale (sem simulacao nenhuma)
+  // pros Campeao dos Campeoes/Grande Campeonato: e uma lista curada com os
+  // proprios campeoes ja definidos - nao faz sentido escolher "Entre os 7"
+  // dentro dela.
   const campeonatoEncerrado = useMemo(
-    () => animals.some(a => a.num_catalogo && !!resultadosPorCatalogo[a.num_catalogo]?.colocacao),
-    [animals, resultadosPorCatalogo]
+    () => tipoDaCategoriaEspecial(categoria) !== null ||
+      animals.some(a => a.num_catalogo && !!resultadosPorCatalogo[a.num_catalogo]?.colocacao),
+    [animals, resultadosPorCatalogo, categoria]
   )
   // Depois que o campeonato encerra (resultado oficial publicado), apaga de
   // vez as marcacoes locais dessa categoria+marcha - nao tem mais utilidade
   // nenhuma e so ficariam lixo acumulado no localStorage pro resto do
   // evento (cada categoria+marcha julgada abre espaco pra "sujeira" se nao
-  // limpar).
+  // limpar). Nao roda pros Campeao dos Campeoes/Grande Campeonato: ali
+  // "animals" e uma lista curada com o categoria/marcha DE VERDADE de cada
+  // animal (varias categorias diferentes misturadas) - limpar por essas
+  // chaves apagaria sem querer as marcacoes locais da categoria propria de
+  // cada animal, so por causa de estar navegando nesse roster.
   useEffect(() => {
-    if (!campeonatoEncerrado) return
+    if (!campeonatoEncerrado || tipoDaCategoriaEspecial(categoria) !== null) return
     const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
     setMarcacoesLocais(prev => {
       let mudou = false
@@ -821,6 +830,49 @@ function HomeContent() {
 
   const fetchAnimals = useCallback(async (pageNum: number, reset: boolean) => {
     setLoading(true)
+
+    // Campeao dos Campeoes/Grande Campeonato: nao tem categoria de verdade
+    // em nm_animais (juntam animais de varias categorias - o admin monta a
+    // lista na mao), entao busca em nm_campeoes_dos_campeoes em vez de
+    // filtrar nm_animais por categoria. Lista curta e curada - sem
+    // paginacao, busca livre ou filtro de haras/criador (nao fazem sentido
+    // aqui).
+    const tipoEspecial = tipoDaCategoriaEspecial(categoria)
+    if (tipoEspecial) {
+      if (!reset) { setLoading(false); return }
+      const marchasParaBuscar: ('MB' | 'MP')[] = marcha === 'Todas' ? ['MB', 'MP'] : [marcha as 'MB' | 'MP']
+      const respostas = await Promise.all(
+        marchasParaBuscar.map(m => supabase.rpc('nm_campeoes_dos_campeoes_listar', { p_tipo: tipoEspecial, p_tipo_marcha: m }))
+      )
+      const linhas = respostas.flatMap(r => r.data || []) as {
+        num_catalogo: string; nome: string; categoria: string; tipo_marcha: string
+        registro: string | null; haras: string | null; expositor: string | null; ordem: number
+      }[]
+      const animaisEspeciais: Animal[] = linhas.map((l, i) => ({
+        id: -(i + 1),
+        id_catalogo: 0,
+        nome: l.nome,
+        num_catalogo: l.num_catalogo,
+        registro: l.registro || '',
+        chip: '',
+        data_nascimento: '',
+        idade: '',
+        campeonato: `${categoria} - ${l.tipo_marcha}`,
+        tipo_campeonato: 'Convencional',
+        tipo_marcha: l.tipo_marcha,
+        categoria: l.categoria,
+        pai: '', pai_registro: '', mae: '', mae_registro: '',
+        criador: '', expositor: l.expositor || '',
+        haras: l.haras, cidade: null, uf: null,
+        destaque: false, tambem_excl_marcha: false, finalista_marcha: false, retirado: false,
+      }))
+      setAnimals(animaisEspeciais)
+      setTotal(animaisEspeciais.length)
+      setHasMore(false)
+      setLoading(false)
+      return
+    }
+
     const from = pageNum * PER_PAGE
     const to = from + PER_PAGE - 1
     const modoPista = !searchMode

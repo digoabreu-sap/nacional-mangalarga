@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 import { decodeAdminToken, temPermissao } from '@/lib/adminAuth'
+import { categoriasEspeciais } from '@/lib/campeoesDosCampeoes'
 
 function autorizado(req: NextRequest) {
   return temPermissao(decodeAdminToken(req), 'categoria')
@@ -30,6 +31,10 @@ export async function GET(req: NextRequest) {
   const categorias = (categoriasData || [])
     .map((d: { categoria: string }) => d.categoria)
     .filter(Boolean)
+  // Campeao dos Campeoes/Grande Campeonato (5 tipos, sem categoria de
+  // verdade em nm_animais - o admin precisa poder colocar um deles "em
+  // pista" igual a qualquer categoria normal).
+  categorias.push(...categoriasEspeciais())
 
   return NextResponse.json({ pistas, categorias })
 }

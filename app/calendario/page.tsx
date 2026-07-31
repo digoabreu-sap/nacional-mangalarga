@@ -7,6 +7,7 @@ import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
 import { supabase, Campeonato } from '@/lib/supabase'
 import { SCHEDULE, getEventType, getMarchaType, isToday, isPast, findCampeonatoParaEvento, eventMatchesCategoria } from '@/lib/calendario'
+import { categoriaEspecialDoEvento } from '@/lib/campeoesDosCampeoes'
 
 export default function CalendarioPage() {
   const router = useRouter()
@@ -135,13 +136,23 @@ export default function CalendarioPage() {
                   {filteredEvents.map((evt, i) => {
                     const type = getEventType(evt)
                     const mt = getMarchaType(evt)
-                    const nomeCampeonato = campeonatos.length > 0 ? findCampeonatoParaEvento(evt, campeonatos) : null
+                    // Grande Campeonato/Campeao dos Campeoes nao tem
+                    // categoria de verdade (somam varias categorias) - usa
+                    // o link direto categoria+marcha (mesmo contrato da
+                    // pagina de Campeonatos) em vez do campeonato= comum.
+                    const especial = categoriaEspecialDoEvento(evt)
+                    const nomeCampeonato = !especial && campeonatos.length > 0 ? findCampeonatoParaEvento(evt, campeonatos) : null
+                    const linkavel = !!especial || !!nomeCampeonato
+                    const irParaLink = () => {
+                      if (especial) router.push(`/?categoria=${encodeURIComponent(especial.categoria)}&marcha=${especial.tipoMarcha}`)
+                      else if (nomeCampeonato) router.push(`/?campeonato=${encodeURIComponent(nomeCampeonato)}`)
+                    }
                     return (
                       <div
                         key={i}
-                        onClick={nomeCampeonato ? () => router.push(`/?campeonato=${encodeURIComponent(nomeCampeonato)}`) : undefined}
+                        onClick={linkavel ? irParaLink : undefined}
                         className={`flex items-start gap-2.5 px-3 py-2 border-b border-[var(--border)] last:border-b-0 ${
-                          nomeCampeonato ? 'cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors' : ''
+                          linkavel ? 'cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors' : ''
                         }`}
                       >
                         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0 ${
@@ -152,7 +163,7 @@ export default function CalendarioPage() {
                           'bg-[var(--text-muted)]'
                         }`} />
                         <div className="min-w-0 flex-1">
-                          <p className={`text-xs ${type === 'especial' ? 'font-bold text-[var(--accent-dark)]' : ''} ${nomeCampeonato ? 'text-[var(--accent)] underline decoration-dotted underline-offset-2' : ''}`}>{evt}</p>
+                          <p className={`text-xs ${type === 'especial' ? 'font-bold text-[var(--accent-dark)]' : ''} ${linkavel ? 'text-[var(--accent)] underline decoration-dotted underline-offset-2' : ''}`}>{evt}</p>
                         </div>
                         {mt && (
                           <span className={`text-[9px] font-bold px-1 py-0.5 rounded flex-shrink-0 ${

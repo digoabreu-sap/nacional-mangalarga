@@ -5,6 +5,7 @@ import { supabase, Campeonato } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import CategoriaCombobox from '@/components/CategoriaCombobox'
+import { CAMPEOES_ESPECIAIS } from '@/lib/campeoesDosCampeoes'
 
 type LinhaCampeonato = { categoria: string; tipo_marcha: string; total_animais: number }
 
@@ -13,6 +14,8 @@ export default function Campeonatos() {
   const [filterMarcha, setFilterMarcha] = useState<string>('Todas')
   const [filterCategoria, setFilterCategoria] = useState<string>('Todas')
   const [loading, setLoading] = useState(true)
+
+  const [especiaisContagem, setEspeciaisContagem] = useState<Record<string, number>>({})
 
   useEffect(() => {
     async function load() {
@@ -31,6 +34,19 @@ export default function Campeonatos() {
     load()
   }, [filterMarcha])
 
+  // Campeao dos Campeoes/Grande Campeonato: nao tem linha em nm_campeonatos
+  // (nao sao categoria de verdade), entao conta direto na tabela deles.
+  useEffect(() => {
+    supabase.from('nm_campeoes_dos_campeoes').select('tipo, tipo_marcha').then(({ data }) => {
+      const contagem: Record<string, number> = {}
+      for (const r of data || []) {
+        const key = `${r.tipo}|${r.tipo_marcha}`
+        contagem[key] = (contagem[key] || 0) + 1
+      }
+      setEspeciaisContagem(contagem)
+    })
+  }, [])
+
   // "Convencional" e "Exclusivamente Marcha" nao sao categorias, sao a
   // modalidade dentro da categoria (se o animal concorre em morfologia+marcha
   // ou so em marcha) - por isso a lista nunca deve ter uma linha separada por
@@ -44,6 +60,18 @@ export default function Campeonatos() {
     if (existente) existente.total_animais += c.total_animais
     else linhasPorChave.set(key, { categoria: c.categoria, tipo_marcha: c.tipo_marcha, total_animais: c.total_animais })
   }
+  // Campeao dos Campeoes/Grande Campeonato: sempre aparecem na lista (mesmo
+  // com 0 animais ainda) - a pessoa precisa achar e clicar mesmo antes do
+  // admin montar a lista.
+  for (const { categoria, tipo } of CAMPEOES_ESPECIAIS) {
+    for (const tipoMarcha of ['MB', 'MP'] as const) {
+      if (filterMarcha !== 'Todas' && filterMarcha !== tipoMarcha) continue
+      linhasPorChave.set(`${categoria}|${tipoMarcha}`, {
+        categoria, tipo_marcha: tipoMarcha, total_animais: especiaisContagem[`${tipo}|${tipoMarcha}`] || 0,
+      })
+    }
+  }
+
   const linhas = [...linhasPorChave.values()].sort((a, b) =>
     a.categoria.localeCompare(b.categoria) || a.tipo_marcha.localeCompare(b.tipo_marcha)
   )
