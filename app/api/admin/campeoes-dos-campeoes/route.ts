@@ -6,7 +6,7 @@ function autorizado(req: NextRequest) {
   return temPermissao(decodeAdminToken(req), 'campeoes')
 }
 
-const TIPOS_VALIDOS = ['castrado', 'macho', 'femea']
+const TIPOS_VALIDOS = ['castrado', 'macho', 'femea', 'grande_jovem_macho', 'grande_jovem_femea']
 const MARCHAS_VALIDAS = ['MB', 'MP']
 
 function validarTipoMarcha(tipo: unknown, tipoMarcha: unknown) {

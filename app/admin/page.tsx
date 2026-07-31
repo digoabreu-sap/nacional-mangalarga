@@ -1347,7 +1347,7 @@ function SobrePanel({ token }: { token: string }) {
   )
 }
 
-type TipoCampeaoDosCampeoes = 'macho' | 'femea' | 'castrado'
+type TipoCampeaoDosCampeoes = 'macho' | 'femea' | 'castrado' | 'grande_jovem_macho' | 'grande_jovem_femea'
 type AnimalCampeaoDosCampeoes = {
   num_catalogo: string; nome: string; categoria: string; tipo_marcha: string
   registro: string | null; haras: string | null; expositor: string | null; ordem: number
@@ -1357,6 +1357,8 @@ const CAMPEOES_TIPO_LABEL: Record<TipoCampeaoDosCampeoes, string> = {
   macho: 'Campeão dos Campeões',
   femea: 'Campeã das Campeãs',
   castrado: 'Campeão dos Campeões Castrado',
+  grande_jovem_macho: 'Grande Campeonato Jovem da Raça — Machos',
+  grande_jovem_femea: 'Grande Campeonato Jovem da Raça — Fêmeas',
 }
 
 // 6 campeonatos no total (3 tipos x 2 marchas). Diferente do resto do site,
