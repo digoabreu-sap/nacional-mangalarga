@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
-type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'banners' | 'sobre' | 'whatsapp' | 'admins'
+type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'campeoes' | 'banners' | 'sobre' | 'whatsapp' | 'admins'
 
 const TAB_LABELS: Record<AbaAdmin, string> = {
   analytics: 'Analytics',
@@ -12,16 +12,17 @@ const TAB_LABELS: Record<AbaAdmin, string> = {
   categoria: 'Categoria',
   video: 'Vídeo',
   resultados: 'Resultados',
+  campeoes: 'Campeões',
   banners: 'Banners',
   sobre: 'Sobre',
   whatsapp: 'WhatsApp',
   admins: 'Admins',
 }
-const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'whatsapp', 'admins']
+const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'admins']
 // Checkboxes de permissao concedidas por aba - "admins" fica de fora (so
 // quem e is_master mexe em admins/permissoes, pra ninguem restrito se
 // autopromover).
-const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'whatsapp']
+const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp']
 
 type Admin = { id: number; email: string; nome: string; is_master: boolean; permissoes: string[] }
 type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number; tamanho_pct: number }
@@ -109,6 +110,7 @@ export default function AdminPage() {
         {tabAtual === 'categoria' && <CategoriaPanel token={token} />}
         {tabAtual === 'video' && <VideoPanel token={token} />}
         {tabAtual === 'resultados' && <ResultadosPanel token={token} />}
+        {tabAtual === 'campeoes' && <CampeoesPanel token={token} />}
         {tabAtual === 'banners' && <BannersPanel token={token} />}
         {tabAtual === 'sobre' && <SobrePanel token={token} />}
         {tabAtual === 'whatsapp' && <WhatsappPanel token={token} />}
@@ -1341,6 +1343,163 @@ function SobrePanel({ token }: { token: string }) {
       <button onClick={salvar} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
         {saving ? 'Salvando...' : 'Salvar'}
       </button>
+    </div>
+  )
+}
+
+type TipoCampeaoDosCampeoes = 'macho' | 'femea' | 'castrado'
+type AnimalCampeaoDosCampeoes = {
+  num_catalogo: string; nome: string; categoria: string; tipo_marcha: string
+  registro: string | null; haras: string | null; expositor: string | null; ordem: number
+}
+
+const CAMPEOES_TIPO_LABEL: Record<TipoCampeaoDosCampeoes, string> = {
+  macho: 'Campeão dos Campeões',
+  femea: 'Campeã das Campeãs',
+  castrado: 'Campeão dos Campeões Castrado',
+}
+
+// 6 campeonatos no total (3 tipos x 2 marchas). Diferente do resto do site,
+// esses juntam animais de VARIAS categorias (os campeoes de marcha de cada
+// categoria voltam a pista - Art. 76 do regulamento), entao nao da pra
+// calcular automaticamente por categoria+marcha - o admin monta a lista na
+// mao, inserindo/removendo pelo numero de catalogo.
+function CampeoesPanel({ token }: { token: string }) {
+  const [tipo, setTipo] = useState<TipoCampeaoDosCampeoes>('macho')
+  const [tipoMarcha, setTipoMarcha] = useState<'MB' | 'MP'>('MB')
+  const [animais, setAnimais] = useState<AnimalCampeaoDosCampeoes[]>([])
+  const [loading, setLoading] = useState(true)
+  const [numCatalogoInput, setNumCatalogoInput] = useState('')
+  const [adicionando, setAdicionando] = useState(false)
+  const [removendo, setRemovendo] = useState<string | null>(null)
+  const [msg, setMsg] = useState('')
+  const [erro, setErro] = useState('')
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const params = new URLSearchParams({ tipo, tipo_marcha: tipoMarcha })
+    const res = await fetch(`/api/admin/campeoes-dos-campeoes?${params}`, { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setAnimais(data.animais || [])
+    setLoading(false)
+  }, [token, tipo, tipoMarcha])
+
+  useEffect(() => { load() }, [load])
+
+  async function adicionar() {
+    const numCatalogo = numCatalogoInput.trim()
+    if (!numCatalogo) return
+    setAdicionando(true)
+    setErro('')
+    setMsg('')
+    const res = await fetch('/api/admin/campeoes-dos-campeoes', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, tipo_marcha: tipoMarcha, num_catalogo: numCatalogo }),
+    })
+    const data = await res.json()
+    setAdicionando(false)
+    if (!res.ok) {
+      setErro(data.error?.includes('nao encontrado') ? `Nenhum animal com catálogo ${numCatalogo}` : (data.error || 'Erro ao adicionar'))
+      return
+    }
+    setNumCatalogoInput('')
+    setMsg('Adicionado!')
+    setTimeout(() => setMsg(''), 2000)
+    load()
+  }
+
+  async function remover(numCatalogo: string) {
+    setRemovendo(numCatalogo)
+    await fetch('/api/admin/campeoes-dos-campeoes', {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo, tipo_marcha: tipoMarcha, num_catalogo: numCatalogo }),
+    })
+    setRemovendo(null)
+    load()
+  }
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold">Campeão dos Campeões / Campeã das Campeãs</h3>
+      <p className="text-xs text-[var(--text-muted)]">
+        Monte a lista de cada um dos 6 campeonatos inserindo o número de catálogo do animal. Diferente do resto do site, esses campeonatos juntam animais de categorias diferentes (os campeões de marcha de cada categoria), então não tem como calcular automaticamente - a lista é só o cadastro dos participantes, não calcula resultado.
+      </p>
+
+      <div className="flex gap-2 flex-wrap">
+        {(Object.keys(CAMPEOES_TIPO_LABEL) as TipoCampeaoDosCampeoes[]).map(t => (
+          <button
+            key={t}
+            onClick={() => setTipo(t)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              tipo === t ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border)]'
+            }`}
+          >
+            {CAMPEOES_TIPO_LABEL[t]}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {(['MB', 'MP'] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setTipoMarcha(m)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+              tipoMarcha === m ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border)]'
+            }`}
+          >
+            {m === 'MB' ? 'Marcha Batida' : 'Marcha Picada'}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 items-start pt-1">
+        <input
+          value={numCatalogoInput}
+          onChange={e => { setNumCatalogoInput(e.target.value); setErro('') }}
+          onKeyDown={e => { if (e.key === 'Enter') adicionar() }}
+          placeholder="Número de catálogo"
+          className="flex-1 py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
+        />
+        <button
+          onClick={adicionar}
+          disabled={adicionando || !numCatalogoInput.trim()}
+          className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+        >
+          {adicionando ? 'Adicionando...' : 'Adicionar'}
+        </button>
+      </div>
+      {erro && <p className="text-sm text-red-400">{erro}</p>}
+      {msg && <p className="text-sm text-green-400">{msg}</p>}
+
+      <p className="text-xs text-[var(--text-muted)] pt-2">
+        {CAMPEOES_TIPO_LABEL[tipo]} — {tipoMarcha === 'MB' ? 'Marcha Batida' : 'Marcha Picada'} ({animais.length} animal{animais.length === 1 ? '' : 'is'})
+      </p>
+      {loading ? (
+        <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" /></div>
+      ) : animais.length === 0 ? (
+        <p className="text-xs text-[var(--text-muted)]">Nenhum animal ainda nesse campeonato.</p>
+      ) : (
+        <div className="space-y-1">
+          {animais.map(a => (
+            <div key={a.num_catalogo} className="flex items-center gap-2 text-sm py-2 px-3 bg-[var(--bg-card)] rounded-lg border border-[var(--border)]">
+              <span className="font-mono text-[var(--text-muted)] w-10 flex-shrink-0">{a.num_catalogo}</span>
+              <div className="flex-1 min-w-0">
+                <p className="truncate font-medium">{a.nome}</p>
+                <p className="truncate text-xs text-[var(--text-muted)]">{a.categoria}{a.haras ? ` · ${a.haras}` : ''}</p>
+              </div>
+              <button
+                onClick={() => remover(a.num_catalogo)}
+                disabled={removendo === a.num_catalogo}
+                className="text-xs text-red-400 hover:text-red-300 disabled:opacity-50 flex-shrink-0"
+              >
+                {removendo === a.num_catalogo ? 'Removendo...' : 'Remover'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

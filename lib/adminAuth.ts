@@ -4,7 +4,7 @@ import { NextRequest } from 'next/server'
 // "admins" (gerenciar outros admins/permissoes) fica de fora de proposito -
 // e sempre exclusiva de quem e is_master, pra evitar que um admin restrito
 // se autopromova.
-export const ABAS_PERMISSAO = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'banners', 'sobre', 'whatsapp'] as const
+export const ABAS_PERMISSAO = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp'] as const
 export type AbaPermissao = typeof ABAS_PERMISSAO[number]
 
 export type AdminTokenPayload = {
