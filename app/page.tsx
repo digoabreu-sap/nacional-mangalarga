@@ -410,8 +410,36 @@ function HomeContent() {
     () => animals.some(a => a.finalista_marcha || a.retirado),
     [animals]
   )
+  // Campeonato encerrado: ja saiu resultado oficial (colocacao) publicado
+  // pra essa categoria+marcha. Nesse ponto as marcacoes locais (Entre os
+  // 7/8 a 13/Retirado) perderam a validade - o card ja mostra a
+  // Classificacao oficial - entao paramos de usa-las pra exibir/editar e
+  // limpamos elas (efeito mais abaixo).
+  const campeonatoEncerrado = useMemo(
+    () => animals.some(a => a.num_catalogo && !!resultadosPorCatalogo[a.num_catalogo]?.colocacao),
+    [animals, resultadosPorCatalogo]
+  )
+  // Depois que o campeonato encerra (resultado oficial publicado), apaga de
+  // vez as marcacoes locais dessa categoria+marcha - nao tem mais utilidade
+  // nenhuma e so ficariam lixo acumulado no localStorage pro resto do
+  // evento (cada categoria+marcha julgada abre espaco pra "sujeira" se nao
+  // limpar).
+  useEffect(() => {
+    if (!campeonatoEncerrado) return
+    const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
+    setMarcacoesLocais(prev => {
+      let mudou = false
+      const next = { ...prev }
+      for (const chave of chaves) {
+        if (chave in next) { delete next[chave]; mudou = true }
+      }
+      if (!mudou) return prev
+      salvarMarcacoesLocais(next)
+      return next
+    })
+  }, [campeonatoEncerrado, animals])
   const animalsExibidos = useMemo(() => {
-    if (adminDefiniuEntreOsSeteOuRetirado || !simulacaoHabilitada) return animals
+    if (adminDefiniuEntreOsSeteOuRetirado || campeonatoEncerrado || !simulacaoHabilitada) return animals
     const porId = new Map(animals.map(a => [a.id, a]))
     const usados = new Set<number>()
     const entre7Ordenados: Animal[] = []
@@ -440,7 +468,7 @@ function HomeContent() {
       else meio.push(a)
     }
     return [...entre7Ordenados, ...oitavaOrdenados, ...meio, ...baixa]
-  }, [animals, adminDefiniuEntreOsSeteOuRetirado, marcacoesLocais, simulacaoHabilitada])
+  }, [animals, adminDefiniuEntreOsSeteOuRetirado, campeonatoEncerrado, marcacoesLocais, simulacaoHabilitada])
 
   // Simula a posicao na marcha (1 a 13: 7 do "Entre os 7" + 6 do "8 a 13",
   // na ordem em que o usuario organizou os cards) e a nota de classificacao
@@ -464,7 +492,7 @@ function HomeContent() {
   const simulacaoMarcha = useMemo(() => {
     const posicoes = new Map<number, number>()
     const classificacoes = new Map<number, { valor: number; label: string }>()
-    if (adminDefiniuEntreOsSeteOuRetirado || !simulacaoHabilitada) return { posicoes, classificacoes }
+    if (adminDefiniuEntreOsSeteOuRetirado || campeonatoEncerrado || !simulacaoHabilitada) return { posicoes, classificacoes }
     const porId = new Map(animals.map(a => [a.id, a]))
     const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
     const ordemCombinada: Animal[] = []
@@ -525,7 +553,7 @@ function HomeContent() {
       classificacoes.set(c.animal.id, { valor: c.valor, label: formatColocacaoMarcha(String(i + 1)) })
     })
     return { posicoes, classificacoes }
-  }, [animals, marcacoesLocais, adminDefiniuEntreOsSeteOuRetirado, resultadosPorCatalogo, simulacaoHabilitada])
+  }, [animals, marcacoesLocais, adminDefiniuEntreOsSeteOuRetirado, campeonatoEncerrado, resultadosPorCatalogo, simulacaoHabilitada])
 
   // "Entre os 7" / "8 a 13" / "Retirado": o admin pode definir no painel
   // (Categoria) - dado compartilhado, valendo pra todo mundo. Se o admin NAO
@@ -1115,10 +1143,14 @@ function HomeContent() {
             const jaVotei = !searchMode && animal.campeonato != null && meuVotoPorCampeonato[animal.campeonato] === animal.id
             const resultado = animal.num_catalogo ? resultadosPorCatalogo[animal.num_catalogo] : undefined
             const marcLocal = marcacoesDaCategoria(marcacoesLocais, animal.categoria, animal.tipo_marcha)
-            const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.finalista_marcha : marcLocal.entre7.includes(animal.id)
-            const oitavaAtiva = !adminDefiniuEntreOsSeteOuRetirado && marcLocal.oitavaATreze.includes(animal.id)
-            const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado ? animal.retirado : marcLocal.retirado.includes(animal.id)
-            const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !searchMode && simulacaoHabilitada
+            const finalistaAtivo = adminDefiniuEntreOsSeteOuRetirado
+              ? animal.finalista_marcha
+              : !campeonatoEncerrado && marcLocal.entre7.includes(animal.id)
+            const oitavaAtiva = !adminDefiniuEntreOsSeteOuRetirado && !campeonatoEncerrado && marcLocal.oitavaATreze.includes(animal.id)
+            const retiradoAtivo = adminDefiniuEntreOsSeteOuRetirado
+              ? animal.retirado
+              : !campeonatoEncerrado && marcLocal.retirado.includes(animal.id)
+            const podeEditarLocal = !adminDefiniuEntreOsSeteOuRetirado && !campeonatoEncerrado && !searchMode && simulacaoHabilitada
             // Sempre segue o cadastro do animal no catalogo - nunca editavel
             // (o regulamento nao permite reclassificacao ao vivo dessa
             // informacao, e o cadastro (Catalogo PDF/base de dados) e a
