@@ -2013,23 +2013,39 @@ function AparenciaPanel({ token }: { token: string }) {
               <span className="text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: hexParaRgba(cor.tagBg, cor.tagBgOpacity), color: cor.tagFg }}>
                 {STATUS_LABEL[status]}
               </span>
-              <div
-                className="flex-1 rounded-lg border p-2 text-[10px] text-[var(--text-muted)]"
-                style={{ backgroundColor: cor.cardBg, borderColor: cor.cardBorder, opacity: cor.cardOpacity / 100 }}
-              >
-                Pré-visualização do card
-              </div>
+              {cor.afetaCard && (
+                <div
+                  className="flex-1 rounded-lg border p-2 text-[10px] text-[var(--text-muted)]"
+                  style={{ backgroundColor: cor.cardBg, borderColor: cor.cardBorder, opacity: cor.cardOpacity / 100 }}
+                >
+                  Pré-visualização do card
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-x-3 gap-y-2">
               <CampoCor label="Cor da tag (fundo)" valor={cor.tagBg} onChange={v => atualizarCampo(status, 'tagBg', v)} />
               <CampoOpacidade label="Opacidade do fundo" valor={cor.tagBgOpacity} onChange={v => atualizarCampo(status, 'tagBgOpacity', v)} />
               <CampoCor label="Cor da tag (fonte)" valor={cor.tagFg} onChange={v => atualizarCampo(status, 'tagFg', v)} />
-              <div />
-              <CampoCor label="Fundo do card" valor={cor.cardBg} onChange={v => atualizarCampo(status, 'cardBg', v)} />
-              <CampoCor label="Contorno do card" valor={cor.cardBorder} onChange={v => atualizarCampo(status, 'cardBorder', v)} />
-              <CampoOpacidade label="Transparência do card" valor={cor.cardOpacity} onChange={v => atualizarCampo(status, 'cardOpacity', v)} />
             </div>
+
+            <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] pt-1 border-t border-[var(--border)]">
+              <input
+                type="checkbox"
+                checked={cor.afetaCard}
+                onChange={e => atualizarCampo(status, 'afetaCard', e.target.checked)}
+                className="w-4 h-4 accent-[var(--accent)]"
+              />
+              Essa tag também formata o card (fundo, contorno e transparência)
+            </label>
+
+            {cor.afetaCard && (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                <CampoCor label="Fundo do card" valor={cor.cardBg} onChange={v => atualizarCampo(status, 'cardBg', v)} />
+                <CampoCor label="Contorno do card" valor={cor.cardBorder} onChange={v => atualizarCampo(status, 'cardBorder', v)} />
+                <CampoOpacidade label="Transparência do card" valor={cor.cardOpacity} onChange={v => atualizarCampo(status, 'cardOpacity', v)} />
+              </div>
+            )}
           </div>
         )
       })}

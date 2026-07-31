@@ -13,9 +13,10 @@ export type CorStatus = {
   tagBg: string        // cor solida (hex) - a opacidade de fundo da tag e aplicada por cima via tagBgOpacity
   tagBgOpacity: number // 0-100
   tagFg: string        // cor do texto da tag (hex)
-  cardBg: string       // cor de fundo do card quando esse status esta ativo (hex)
-  cardBorder: string   // cor do contorno do card quando esse status esta ativo (hex)
-  cardOpacity: number  // 0-100 - transparencia do card inteiro quando esse status esta ativo
+  afetaCard: boolean   // se esse status tambem formata o CARD (fundo/contorno/transparencia) ou so a tag
+  cardBg: string       // cor de fundo do card quando esse status esta ativo (hex) - so usado se afetaCard
+  cardBorder: string   // cor do contorno do card quando esse status esta ativo (hex) - so usado se afetaCard
+  cardOpacity: number  // 0-100 - transparencia do card inteiro quando esse status esta ativo - so usado se afetaCard
 }
 
 export const STATUS_LABEL: Record<StatusCor, string> = {
@@ -26,12 +27,16 @@ export const STATUS_LABEL: Record<StatusCor, string> = {
   marcha: 'Marcha',
 }
 
+// afetaCard reproduz o que cada status ja fazia com o card ANTES dessa
+// funcionalidade existir: Entre os 7/8 a 13 mudavam o contorno, Retirado
+// mudava a transparencia - Excl. Marcha e Marcha nunca mexeram no card, so
+// na tag.
 export const DEFAULT_CORES: Record<StatusCor, CorStatus> = {
-  excl_marcha: { tagBg: '#dc2626', tagBgOpacity: 10, tagFg: '#dc2626', cardBg: '#f7f6f6', cardBorder: '#e6e2e2', cardOpacity: 100 },
-  entre_os_7: { tagBg: '#7a1315', tagBgOpacity: 100, tagFg: '#ffffff', cardBg: '#f7f6f6', cardBorder: '#7a1315', cardOpacity: 100 },
-  oitava_a_treze: { tagBg: '#d0021b', tagBgOpacity: 100, tagFg: '#ffffff', cardBg: '#f7f6f6', cardBorder: '#d0021b', cardOpacity: 100 },
-  retirado: { tagBg: '#000000', tagBgOpacity: 10, tagFg: '#5b5555', cardBg: '#f7f6f6', cardBorder: '#e6e2e2', cardOpacity: 50 },
-  marcha: { tagBg: '#2563eb', tagBgOpacity: 10, tagFg: '#2563eb', cardBg: '#f7f6f6', cardBorder: '#e6e2e2', cardOpacity: 100 },
+  excl_marcha: { tagBg: '#dc2626', tagBgOpacity: 10, tagFg: '#dc2626', afetaCard: false, cardBg: '#f7f6f6', cardBorder: '#e6e2e2', cardOpacity: 100 },
+  entre_os_7: { tagBg: '#7a1315', tagBgOpacity: 100, tagFg: '#ffffff', afetaCard: true, cardBg: '#f7f6f6', cardBorder: '#7a1315', cardOpacity: 100 },
+  oitava_a_treze: { tagBg: '#d0021b', tagBgOpacity: 100, tagFg: '#ffffff', afetaCard: true, cardBg: '#f7f6f6', cardBorder: '#d0021b', cardOpacity: 100 },
+  retirado: { tagBg: '#000000', tagBgOpacity: 10, tagFg: '#5b5555', afetaCard: true, cardBg: '#f7f6f6', cardBorder: '#e6e2e2', cardOpacity: 50 },
+  marcha: { tagBg: '#2563eb', tagBgOpacity: 10, tagFg: '#2563eb', afetaCard: false, cardBg: '#f7f6f6', cardBorder: '#e6e2e2', cardOpacity: 100 },
 }
 
 export type TemaCoresConfig = Partial<Record<StatusCor, Partial<CorStatus>>>

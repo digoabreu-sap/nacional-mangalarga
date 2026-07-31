@@ -1238,22 +1238,28 @@ function HomeContent() {
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
             const classificacaoSimulada = simulacaoMarcha.classificacoes.get(animal.id)
             // Cores do card (fundo/contorno/transparencia) configuraveis pelo
-            // admin, por status - quando mais de um status esta ativo no
-            // mesmo animal, so um "ganha" o contorno/fundo (prioridade:
-            // Entre os 7 > 8 a 13 > Favorito da Torcida, fixo e nao
-            // configuravel > Retirado > Marcha > Excl. Marcha - mesma ordem
-            // que ja existia implicitamente antes dessa funcionalidade). A
-            // opacidade e independente: pega a mais baixa entre todos os
-            // status ativos (hoje so Retirado tem opacidade < 100 por
-            // padrao, os demais continuam 100 - por isso o default nao muda
-            // nada visualmente).
-            const statusCardAtivos: StatusCor[] = [
+            // admin, por status - mas so pros status com o flag "afetaCard"
+            // ligado (o admin decide, na aba Aparencia, se aquela tag tambem
+            // formata o card ou fica so na tag). Quando mais de um status
+            // com afetaCard esta ativo no mesmo animal, so um "ganha" o
+            // contorno/fundo (prioridade: Entre os 7 > 8 a 13 > Favorito da
+            // Torcida, fixo e nao configuravel > Retirado > Marcha > Excl.
+            // Marcha - mesma ordem que ja existia implicitamente antes dessa
+            // funcionalidade). A opacidade e independente: pega a mais baixa
+            // entre todos os status ativos com afetaCard (hoje so Retirado
+            // tem afetaCard=true e opacidade < 100 por padrao - por isso o
+            // default nao muda nada visualmente).
+            const statusCardCandidatos: (StatusCor | false)[] = [
               finalistaAtivo && 'entre_os_7', oitavaAtiva && 'oitava_a_treze', retiradoAtivo && 'retirado',
               campeaoDeMarchaEspecial && 'marcha', exclMarchaAtivo && 'excl_marcha',
-            ].filter((s): s is StatusCor => !!s)
-            const statusCardVencedor: StatusCor | null = finalistaAtivo ? 'entre_os_7' : oitavaAtiva ? 'oitava_a_treze'
+            ]
+            const statusCardAtivos = statusCardCandidatos.filter((s): s is StatusCor => !!s && corEfetiva(s, temaCores).afetaCard)
+            const statusCardVencedor: StatusCor | null = statusCardAtivos.includes('entre_os_7') ? 'entre_os_7'
+              : statusCardAtivos.includes('oitava_a_treze') ? 'oitava_a_treze'
               : ehLider ? null
-              : retiradoAtivo ? 'retirado' : campeaoDeMarchaEspecial ? 'marcha' : exclMarchaAtivo ? 'excl_marcha' : null
+              : statusCardAtivos.includes('retirado') ? 'retirado'
+              : statusCardAtivos.includes('marcha') ? 'marcha'
+              : statusCardAtivos.includes('excl_marcha') ? 'excl_marcha' : null
             const corCardVencedor = statusCardVencedor ? corEfetiva(statusCardVencedor, temaCores) : null
             const opacidadeCard = statusCardAtivos.length > 0
               ? Math.min(...statusCardAtivos.map(s => corEfetiva(s, temaCores).cardOpacity)) / 100
