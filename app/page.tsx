@@ -13,6 +13,7 @@ import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha, normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 import { tipoDaCategoriaEspecial } from '@/lib/campeoesDosCampeoes'
+import { TemaCoresConfig, StatusCor, corEfetiva, estiloTag } from '@/lib/temaCores'
 
 const MARCHAS = [
   { value: 'Todas', label: 'Todas' },
@@ -137,6 +138,7 @@ function HomeContent() {
   const [votosPorAnimal, setVotosPorAnimal] = useState<Record<number, number>>({})
   const [meuVotoPorCampeonato, setMeuVotoPorCampeonato] = useState<Record<string, number | null>>({})
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
+  const [temaCores, setTemaCores] = useState<TemaCoresConfig>({})
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
   useEffect(() => {
@@ -190,6 +192,12 @@ function HomeContent() {
     supabase.rpc('nm_get_whatsapp_config').then(({ data }) => {
       const atual = Array.isArray(data) ? data[0] : data
       if (atual?.numero) setWhatsappConfig(atual)
+    })
+  }, [])
+
+  useEffect(() => {
+    supabase.rpc('nm_get_tema_cores').then(({ data }) => {
+      if (data) setTemaCores(data)
     })
   }, [])
 
@@ -1229,18 +1237,46 @@ function HomeContent() {
             const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
             const classificacaoSimulada = simulacaoMarcha.classificacoes.get(animal.id)
+            // Cores do card (fundo/contorno/transparencia) configuraveis pelo
+            // admin, por status - quando mais de um status esta ativo no
+            // mesmo animal, so um "ganha" o contorno/fundo (prioridade:
+            // Entre os 7 > 8 a 13 > Favorito da Torcida, fixo e nao
+            // configuravel > Retirado > Marcha > Excl. Marcha - mesma ordem
+            // que ja existia implicitamente antes dessa funcionalidade). A
+            // opacidade e independente: pega a mais baixa entre todos os
+            // status ativos (hoje so Retirado tem opacidade < 100 por
+            // padrao, os demais continuam 100 - por isso o default nao muda
+            // nada visualmente).
+            const statusCardAtivos: StatusCor[] = [
+              finalistaAtivo && 'entre_os_7', oitavaAtiva && 'oitava_a_treze', retiradoAtivo && 'retirado',
+              campeaoDeMarchaEspecial && 'marcha', exclMarchaAtivo && 'excl_marcha',
+            ].filter((s): s is StatusCor => !!s)
+            const statusCardVencedor: StatusCor | null = finalistaAtivo ? 'entre_os_7' : oitavaAtiva ? 'oitava_a_treze'
+              : ehLider ? null
+              : retiradoAtivo ? 'retirado' : campeaoDeMarchaEspecial ? 'marcha' : exclMarchaAtivo ? 'excl_marcha' : null
+            const corCardVencedor = statusCardVencedor ? corEfetiva(statusCardVencedor, temaCores) : null
+            const opacidadeCard = statusCardAtivos.length > 0
+              ? Math.min(...statusCardAtivos.map(s => corEfetiva(s, temaCores).cardOpacity)) / 100
+              : 1
             return (
             <Link
               key={animal.id}
               href={`/animal/${animal.num_catalogo || animal.id}`}
               onClick={() => trackAnimalClick(animal.id)}
-              className={`block bg-[var(--bg-card)] rounded-xl p-4 border transition-all active:scale-[0.98] ${
-                retiradoAtivo ? 'opacity-50' : ''
-              } ${
-                finalistaAtivo ? 'border-[var(--accent-dark)] shadow-[0_0_0_1px_var(--accent-dark)]' :
-                oitavaAtiva ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' :
-                ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]' : 'border-[var(--border)] hover:border-[var(--accent)]/30'
+              className={`block rounded-xl p-4 border transition-all active:scale-[0.98] ${
+                corCardVencedor ? '' :
+                ehLider ? 'border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)] bg-[var(--bg-card)]' :
+                'border-[var(--border)] hover:border-[var(--accent)]/30 bg-[var(--bg-card)]'
               }`}
+              style={{
+                opacity: opacidadeCard,
+                ...(corCardVencedor ? {
+                  backgroundColor: corCardVencedor.cardBg,
+                  borderColor: corCardVencedor.cardBorder,
+                  boxShadow: (statusCardVencedor === 'entre_os_7' || statusCardVencedor === 'oitava_a_treze')
+                    ? `0 0 0 1px ${corCardVencedor.cardBorder}` : undefined,
+                } : {}),
+              }}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
@@ -1251,12 +1287,12 @@ function HomeContent() {
                       {animal.tipo_marcha === 'MB' ? 'M. Batida' : 'M. Picada'}
                     </span>
                     {exclMarchaAtivo && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-600/10 text-red-600 dark:text-red-400">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={estiloTag('excl_marcha', temaCores)}>
                         Excl. Marcha
                       </span>
                     )}
                     {campeaoDeMarchaEspecial && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-600/10 text-blue-600 dark:text-blue-400">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={estiloTag('marcha', temaCores)}>
                         Marcha
                       </span>
                     )}
@@ -1271,13 +1307,14 @@ function HomeContent() {
                         aria-label={finalistaAtivo ? 'Remover dos Entre os 7 (marcação pessoal)' : 'Marcar como Entre os 7 (marcação pessoal)'}
                         title="Marcação pessoal - só aparece pra você"
                         className={`text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1 transition-all active:scale-90 ${
-                          finalistaAtivo ? 'bg-[var(--accent-dark)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                          finalistaAtivo ? '' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
                         }`}
+                        style={finalistaAtivo ? estiloTag('entre_os_7', temaCores) : undefined}
                       >
                         🏁 Entre os 7
                       </button>
                     ) : finalistaAtivo && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent-dark)] text-white flex items-center gap-1">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1" style={estiloTag('entre_os_7', temaCores)}>
                         🏁 Entre os 7
                       </span>
                     )}
@@ -1313,13 +1350,14 @@ function HomeContent() {
                         aria-label={oitavaAtiva ? 'Remover do 8 a 13 (marcação pessoal)' : 'Marcar como 8 a 13 (marcação pessoal)'}
                         title="Marcação pessoal - só aparece pra você"
                         className={`text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1 transition-all active:scale-90 ${
-                          oitavaAtiva ? 'bg-[var(--accent)] text-white' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                          oitavaAtiva ? '' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
                         }`}
+                        style={oitavaAtiva ? estiloTag('oitava_a_treze', temaCores) : undefined}
                       >
                         8 a 13
                       </button>
                     ) : oitavaAtiva && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-[var(--accent)] text-white flex items-center gap-1">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded flex items-center gap-1" style={estiloTag('oitava_a_treze', temaCores)}>
                         8 a 13
                       </span>
                     )}
@@ -1355,13 +1393,14 @@ function HomeContent() {
                         aria-label={retiradoAtivo ? 'Desmarcar retirado (marcação pessoal)' : 'Marcar como retirado (marcação pessoal)'}
                         title="Marcação pessoal - só aparece pra você"
                         className={`text-xs font-bold px-1.5 py-0.5 rounded transition-all active:scale-90 ${
-                          retiradoAtivo ? 'bg-black/20 text-[var(--text-primary)]' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
+                          retiradoAtivo ? '' : 'bg-black/5 text-[var(--text-secondary)] hover:bg-black/10'
                         }`}
+                        style={retiradoAtivo ? estiloTag('retirado', temaCores) : undefined}
                       >
                         Retirado
                       </button>
                     ) : retiradoAtivo && (
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-black/10 text-[var(--text-secondary)]">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={estiloTag('retirado', temaCores)}>
                         Retirado
                       </span>
                     )}

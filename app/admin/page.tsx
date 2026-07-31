@@ -3,9 +3,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
 import { normalizarColocacao } from '@/lib/colocacao'
+import { StatusCor, TemaCoresConfig, DEFAULT_CORES, STATUS_LABEL, corEfetiva, hexParaRgba } from '@/lib/temaCores'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
-type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'campeoes' | 'banners' | 'sobre' | 'whatsapp' | 'admins'
+type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'campeoes' | 'banners' | 'sobre' | 'whatsapp' | 'aparencia' | 'admins'
 
 const TAB_LABELS: Record<AbaAdmin, string> = {
   analytics: 'Analytics',
@@ -17,13 +18,14 @@ const TAB_LABELS: Record<AbaAdmin, string> = {
   banners: 'Banners',
   sobre: 'Sobre',
   whatsapp: 'WhatsApp',
+  aparencia: 'Aparência',
   admins: 'Admins',
 }
-const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'admins']
+const TODAS_ABAS: AbaAdmin[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'aparencia', 'admins']
 // Checkboxes de permissao concedidas por aba - "admins" fica de fora (so
 // quem e is_master mexe em admins/permissoes, pra ninguem restrito se
 // autopromover).
-const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp']
+const ABAS_PERMISSAO: Exclude<AbaAdmin, 'admins'>[] = ['analytics', 'leads', 'categoria', 'video', 'resultados', 'campeoes', 'banners', 'sobre', 'whatsapp', 'aparencia']
 
 type Admin = { id: number; email: string; nome: string; is_master: boolean; permissoes: string[] }
 type Banner = { id: number; posicao: string; titulo: string; imagem_url: string; link_url: string; html_content: string; ativo: boolean; ordem: number; tamanho_pct: number }
@@ -34,6 +36,7 @@ export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null)
   const [admin, setAdmin] = useState<Admin | null>(null)
   const [tab, setTab] = useState<AbaAdmin>('analytics')
+  const [menuAberto, setMenuAberto] = useState(false)
 
   useEffect(() => {
     document.title = `Admin - Nacional MM (${formatVersionComDataHora()})`
@@ -71,12 +74,23 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-[var(--bg-primary)]">
       <header className="bg-[var(--bg-card)] border-b border-[var(--border)] px-4 py-3">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-bold">Admin - Nacional MM</h1>
-            <p className="text-xs text-[var(--text-muted)]">Ola, {admin.nome}</p>
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => setMenuAberto(true)}
+              aria-label="Abrir menu"
+              className="w-9 h-9 flex-shrink-0 flex items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--accent)]/40 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold truncate">{TAB_LABELS[tabAtual]}</h1>
+              <p className="text-xs text-[var(--text-muted)]">Ola, {admin.nome}</p>
+            </div>
           </div>
-          <div className="text-right">
+          <div className="text-right flex-shrink-0">
             <button
               onClick={() => { localStorage.removeItem('nm_admin_token'); localStorage.removeItem('nm_admin_user'); setToken(null); setAdmin(null) }}
               className="text-xs text-red-400 hover:text-red-300"
@@ -88,21 +102,37 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 py-4">
-        <div className="flex gap-2 mb-6 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-          {abasVisiveis.map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0 ${
-                tabAtual === t ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-card)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-              }`}
-            >
-              {TAB_LABELS[t]}
-            </button>
-          ))}
+      {/* Menu lateral - some/aparece por cima do conteudo (nao empurra
+          layout), pra caber as 11 abas sem precisar rolar uma barra
+          horizontal como antes. */}
+      {menuAberto && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMenuAberto(false)} />
+          <nav className="relative w-64 max-w-[80vw] h-full bg-[var(--bg-card)] border-r border-[var(--border)] overflow-y-auto p-3 flex flex-col gap-1 shadow-2xl">
+            <div className="flex items-center justify-between px-1 pb-2 mb-1 border-b border-[var(--border)]">
+              <span className="text-sm font-bold">Menu</span>
+              <button onClick={() => setMenuAberto(false)} aria-label="Fechar menu" className="w-7 h-7 flex items-center justify-center text-[var(--text-secondary)]">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            {abasVisiveis.map(t => (
+              <button
+                key={t}
+                onClick={() => { setTab(t); setMenuAberto(false) }}
+                className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                  tabAtual === t ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]'
+                }`}
+              >
+                {TAB_LABELS[t]}
+              </button>
+            ))}
+          </nav>
         </div>
+      )}
 
+      <div className="max-w-4xl mx-auto px-4 py-4">
         {abasVisiveis.length === 0 && (
           <p className="text-sm text-[var(--text-muted)]">Nenhuma permissao configurada pra este acesso. Fale com um administrador master.</p>
         )}
@@ -115,6 +145,7 @@ export default function AdminPage() {
         {tabAtual === 'banners' && <BannersPanel token={token} />}
         {tabAtual === 'sobre' && <SobrePanel token={token} />}
         {tabAtual === 'whatsapp' && <WhatsappPanel token={token} />}
+        {tabAtual === 'aparencia' && <AparenciaPanel token={token} />}
         {tabAtual === 'admins' && <AdminsPanel token={token} />}
       </div>
     </main>
@@ -1913,5 +1944,118 @@ function AdminsPanel({ token }: { token: string }) {
         ))}
       </div>
     </div>
+  )
+}
+
+const STATUS_CORES_LISTA: StatusCor[] = ['excl_marcha', 'entre_os_7', 'oitava_a_treze', 'retirado', 'marcha']
+
+function AparenciaPanel({ token }: { token: string }) {
+  const [config, setConfig] = useState<TemaCoresConfig>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    fetch('/api/admin/tema-cores', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => { setConfig(data.config || {}); setLoading(false) })
+  }, [token])
+
+  function atualizarCampo<K extends keyof (typeof DEFAULT_CORES)[StatusCor]>(status: StatusCor, campo: K, valor: (typeof DEFAULT_CORES)[StatusCor][K]) {
+    setConfig(prev => ({ ...prev, [status]: { ...corEfetiva(status, prev), [campo]: valor } }))
+  }
+
+  function restaurarPadrao(status: StatusCor) {
+    setConfig(prev => {
+      const copia = { ...prev }
+      delete copia[status]
+      return copia
+    })
+  }
+
+  async function salvar() {
+    setSaving(true)
+    setMsg('')
+    const res = await fetch('/api/admin/tema-cores', {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config }),
+    })
+    setSaving(false)
+    setMsg(res.ok ? 'Cores salvas - ja valem pro Ao Vivo.' : 'Erro ao salvar')
+    setTimeout(() => setMsg(''), 4000)
+  }
+
+  if (loading) return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin" /></div>
+
+  return (
+    <div className="space-y-4 pt-2">
+      <div>
+        <h3 className="text-sm font-semibold">Cores das Tags e Cards (Ao Vivo)</h3>
+        <p className="text-xs text-[var(--text-muted)] mt-1">
+          Personalize a cor da tag (fonte/fundo) e do card (fundo/contorno/transparência) de cada status. A cor padrão é a que o site já usa hoje - &quot;Restaurar padrão&quot; volta pra ela a qualquer momento.
+        </p>
+      </div>
+
+      {STATUS_CORES_LISTA.map(status => {
+        const cor = corEfetiva(status, config)
+        const temOverride = !!config[status] && Object.keys(config[status] as object).length > 0
+        return (
+          <div key={status} className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-semibold">{STATUS_LABEL[status]}</h4>
+              <button onClick={() => restaurarPadrao(status)} disabled={!temOverride} className="text-[10px] text-[var(--accent)] disabled:opacity-30 disabled:cursor-default">
+                Restaurar padrão
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: hexParaRgba(cor.tagBg, cor.tagBgOpacity), color: cor.tagFg }}>
+                {STATUS_LABEL[status]}
+              </span>
+              <div
+                className="flex-1 rounded-lg border p-2 text-[10px] text-[var(--text-muted)]"
+                style={{ backgroundColor: cor.cardBg, borderColor: cor.cardBorder, opacity: cor.cardOpacity / 100 }}
+              >
+                Pré-visualização do card
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+              <CampoCor label="Cor da tag (fundo)" valor={cor.tagBg} onChange={v => atualizarCampo(status, 'tagBg', v)} />
+              <CampoOpacidade label="Opacidade do fundo" valor={cor.tagBgOpacity} onChange={v => atualizarCampo(status, 'tagBgOpacity', v)} />
+              <CampoCor label="Cor da tag (fonte)" valor={cor.tagFg} onChange={v => atualizarCampo(status, 'tagFg', v)} />
+              <div />
+              <CampoCor label="Fundo do card" valor={cor.cardBg} onChange={v => atualizarCampo(status, 'cardBg', v)} />
+              <CampoCor label="Contorno do card" valor={cor.cardBorder} onChange={v => atualizarCampo(status, 'cardBorder', v)} />
+              <CampoOpacidade label="Transparência do card" valor={cor.cardOpacity} onChange={v => atualizarCampo(status, 'cardOpacity', v)} />
+            </div>
+          </div>
+        )
+      })}
+
+      {msg && <p className="text-xs text-[var(--accent)]">{msg}</p>}
+      <button onClick={salvar} disabled={saving} className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+        {saving ? 'Salvando...' : 'Salvar Cores'}
+      </button>
+    </div>
+  )
+}
+
+function CampoCor({ label, valor, onChange }: { label: string; valor: string; onChange: (v: string) => void }) {
+  return (
+    <label className="text-xs text-[var(--text-secondary)] flex items-center justify-between gap-2">
+      {label}
+      <input type="color" value={valor} onChange={e => onChange(e.target.value)} className="w-8 h-8 rounded border border-[var(--border)] cursor-pointer bg-transparent flex-shrink-0" />
+    </label>
+  )
+}
+
+function CampoOpacidade({ label, valor, onChange }: { label: string; valor: number; onChange: (v: number) => void }) {
+  return (
+    <label className="text-xs text-[var(--text-secondary)] flex flex-col gap-1">
+      <span className="flex items-center justify-between">{label}<span className="font-mono">{valor}%</span></span>
+      <input type="range" min={0} max={100} value={valor} onChange={e => onChange(Number(e.target.value))} />
+    </label>
   )
 }
