@@ -775,8 +775,11 @@ function aplicarPdfNasLinhas(parseado: PdfParseado, linhas: LinhaEdit[]): LinhaE
 // resultado raspado sempre prevalece: o RPC de upsert manual ignora
 // silenciosamente a escrita se ja existir uma linha de origem 'abccmm' pra
 // aquele animal (por isso linhas oficiais aparecem travadas pra edicao).
+type CampeonatoPendente = CampeonatoOpt & { total_animais: number; registrados: number }
+
 function ResultadoManualPanel({ token }: { token: string }) {
   const [campeonatos, setCampeonatos] = useState<CampeonatoOpt[]>([])
+  const [pendentes, setPendentes] = useState<CampeonatoPendente[]>([])
   const [selectedId, setSelectedId] = useState('')
   const [linhasEdit, setLinhasEdit] = useState<LinhaEdit[]>([])
   const [loadingLinhas, setLoadingLinhas] = useState(false)
@@ -792,11 +795,16 @@ function ResultadoManualPanel({ token }: { token: string }) {
   // a categoria do zero e jogaria fora o que acabou de vir do PDF.
   const pularProximoLoadRef = useRef(false)
 
-  useEffect(() => {
+  const carregarListaCampeonatos = useCallback(() => {
     fetch('/api/admin/resultados-manual', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.json())
-      .then(data => setCampeonatos(data.campeonatos || []))
+      .then(data => {
+        setCampeonatos(data.campeonatos || [])
+        setPendentes(data.pendentes || [])
+      })
   }, [token])
+
+  useEffect(() => { carregarListaCampeonatos() }, [carregarListaCampeonatos])
 
   const campeonato = campeonatos.find(c => String(c.id) === selectedId) || null
   const campeonatosFiltrados = busca.trim()
@@ -885,6 +893,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
       setMsg(`${data.salvos} resultado(s) salvo(s)${data.ignorados?.length ? ` · ${data.ignorados.length} ignorado(s) por ja ter oficial` : ''}.`)
       setTimeout(() => setMsg(''), 5000)
       loadDados()
+      carregarListaCampeonatos()
     } else {
       setMsg('Erro ao salvar')
     }
@@ -898,6 +907,7 @@ function ResultadoManualPanel({ token }: { token: string }) {
       body: JSON.stringify({ tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria, num_catalogo: numCatalogo }),
     })
     loadDados()
+    carregarListaCampeonatos()
   }
 
   const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
@@ -909,6 +919,33 @@ function ResultadoManualPanel({ token }: { token: string }) {
       <p className="text-xs text-[var(--text-muted)]">
         Use enquanto a ABCCMM ainda nao publicou o resultado oficial dessa categoria. Preencha a tabela (tab entre os campos) e clique em Salvar Todos uma unica vez. Assim que a sincronizacao encontrar o oficial, ele sempre substitui o que foi cadastrado aqui - linhas ja OFICIAIS aparecem travadas.
       </p>
+
+      <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold">
+            Pendentes de cadastro <span className="text-[var(--text-muted)] font-normal">({pendentes.length})</span>
+          </p>
+          <button onClick={carregarListaCampeonatos} className="text-[10px] text-[var(--accent)]">Atualizar lista</button>
+        </div>
+        {pendentes.length === 0 ? (
+          <p className="text-xs text-[var(--text-muted)]">Nenhuma categoria pendente - todo mundo com colocacao registrada.</p>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {pendentes.map(p => (
+              <button
+                key={p.id}
+                onClick={() => { setSelectedId(String(p.id)); setBusca(''); setPdfParseado(null); setPdfMsg('') }}
+                className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-left text-xs transition-colors ${
+                  String(p.id) === selectedId ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'hover:bg-[var(--bg-card-hover)]'
+                }`}
+              >
+                <span className="truncate">{p.nome}</span>
+                <span className="flex-shrink-0 font-mono text-[var(--text-muted)]">{p.registrados}/{p.total_animais}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <label className={`px-4 py-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-sm font-semibold ${pdfLoading ? 'opacity-50' : 'cursor-pointer hover:border-[var(--accent)]/50'}`}>

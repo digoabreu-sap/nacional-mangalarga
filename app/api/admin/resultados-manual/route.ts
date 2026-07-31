@@ -14,8 +14,24 @@ export async function GET(req: NextRequest) {
   const categoria = req.nextUrl.searchParams.get('categoria')
 
   if (!tipo_campeonato || !tipo_marcha || !categoria) {
-    const { data } = await supabase.from('nm_campeonatos').select('*').order('categoria')
-    return NextResponse.json({ campeonatos: data || [] })
+    const [{ data: campeonatos }, { data: resultados }] = await Promise.all([
+      supabase.from('nm_campeonatos').select('*').order('categoria'),
+      // So a colocacao (classificacao final) conta como "cadastrado" - uma
+      // linha com so morfologia/funcional preenchida ainda nao fecha o
+      // resultado da categoria.
+      supabase.from('nm_resultados').select('tipo_campeonato, tipo_marcha, categoria, colocacao').eq('tipo_prova', 'final'),
+    ])
+    const registrados = new Map<string, number>()
+    for (const r of resultados || []) {
+      if (!r.colocacao) continue
+      const key = `${r.tipo_campeonato}|${r.tipo_marcha}|${r.categoria}`
+      registrados.set(key, (registrados.get(key) || 0) + 1)
+    }
+    const pendentes = (campeonatos || [])
+      .map(c => ({ ...c, registrados: registrados.get(`${c.tipo_campeonato}|${c.tipo_marcha}|${c.categoria}`) || 0 }))
+      .filter(c => c.registrados < c.total_animais)
+      .sort((a, b) => a.categoria.localeCompare(b.categoria) || a.tipo_marcha.localeCompare(b.tipo_marcha))
+    return NextResponse.json({ campeonatos: campeonatos || [], pendentes })
   }
 
   const [animaisRes, resultadosRes] = await Promise.all([
