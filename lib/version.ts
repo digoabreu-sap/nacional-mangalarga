@@ -2,7 +2,7 @@
 // - Mudanca pequena (ajuste, correcao pontual): incrementa o "menor" (2.0 -> 2.01 -> 2.02...).
 // - Mudanca grande (nova funcionalidade, redesign de tela): incrementa o "maior" e zera o menor (2.34 -> 3.0).
 // Atualizar aqui a cada deploy com mudanca de codigo.
-export const APP_VERSION = '6.12'
+export const APP_VERSION = '6.13'
 
 export function formatVersionComDataHora(): string {
   const iso = process.env.NEXT_PUBLIC_BUILD_TIME

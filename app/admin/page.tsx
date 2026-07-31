@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
+import { normalizarColocacao } from '@/lib/colocacao'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
 type AbaAdmin = 'analytics' | 'leads' | 'categoria' | 'video' | 'resultados' | 'campeoes' | 'banners' | 'sobre' | 'whatsapp' | 'admins'
@@ -780,6 +781,77 @@ function aplicarPdfNasLinhas(parseado: PdfParseado, linhas: LinhaEdit[]): LinhaE
   })
 }
 
+// Lista indexada da hierarquia oficial de colocacao (mesma escala de
+// lib/colocacao.ts: 1=Campeao, 2=Reservado, 3-7=1o-5o Premio,
+// 8-10=1a-3a Mencao Honrosa) - usada tanto pro listbox de Classificacao
+// quanto pra converter o rotulo textual do Resumo Parcial (que usa a
+// mesma nomenclatura pros quesitos Marcha/Funcional) numa posicao
+// numerica, ja que pontuacao_andamento/pontuacao_funcional guardam
+// sempre um rank cru (1, 2, 3...), nao um texto de colocacao.
+const OPCOES_COLOCACAO = [
+  { valor: 'Campeão', label: '1 - Campeão(ã)' },
+  { valor: 'Reservado Campeão', label: '2 - Reservado Campeão(ã)' },
+  { valor: '1º Prêmio', label: '3 - 1º Prêmio' },
+  { valor: '2º Prêmio', label: '4 - 2º Prêmio' },
+  { valor: '3º Prêmio', label: '5 - 3º Prêmio' },
+  { valor: '4º Prêmio', label: '6 - 4º Prêmio' },
+  { valor: '5º Prêmio', label: '7 - 5º Prêmio' },
+  { valor: '1ª Menção Honrosa', label: '8 - 1ª Menção Honrosa' },
+  { valor: '2ª Menção Honrosa', label: '9 - 2ª Menção Honrosa' },
+  { valor: '3ª Menção Honrosa', label: '10 - 3ª Menção Honrosa' },
+]
+
+type SecaoResumoParcial = 'Categoria' | 'Marcha' | 'Prova Funcional'
+type EntradaResumoParcial = {
+  tipo_campeonato: string; tipo_marcha: 'MB' | 'MP'; categoria: string
+  secao: SecaoResumoParcial; num_catalogo: string; colocacao_bruta: string
+}
+
+// Aplica os resultados do Resumo Parcial (Mapa de Premiação) na categoria
+// aberta: secao "Categoria" vira o campo colocacao (so quando o
+// tipo_campeonato do PDF bate com o campeonato aberto - Exclusivamente
+// Marcha nunca tem secao de Categoria, so de Marcha). "Marcha" e "Prova
+// Funcional" viram pontuacao_andamento/pontuacao_funcional, convertendo o
+// rotulo textual pra posicao numerica via a mesma tabela de OPCOES_COLOCACAO
+// (o PDF junta Convencional e Exclusivamente Marcha na mesma secao de
+// Marcha sem distinguir tipo_campeonato - mas so os animais realmente
+// cadastrados nessa categoria aparecem em linhasEdit, entao casar por
+// numero de catalogo ja filtra certo sozinho).
+function aplicarResumoParcialNasLinhas(
+  entradas: EntradaResumoParcial[],
+  campeonato: CampeonatoOpt,
+  linhas: LinhaEdit[],
+): { linhas: LinhaEdit[]; aplicados: number } {
+  const atualizadas = new Map<string, LinhaEdit>(linhas.map(l => [l.num_catalogo, l]))
+  let aplicados = 0
+
+  for (const e of entradas) {
+    if (e.tipo_marcha !== campeonato.tipo_marcha) continue
+    if (normalizarTextoComparacao(e.categoria) !== normalizarTextoComparacao(campeonato.categoria)) continue
+    const linha = atualizadas.get(e.num_catalogo)
+    if (!linha || linha.origem === 'abccmm') continue
+
+    // Normaliza o rotulo bruto do PDF ("Campeão(ã) - Jovem", "Campeão(a)",
+    // "1 Prêmio"...) pro rotulo canonico da hierarquia (mesma tabela de
+    // OPCOES_COLOCACAO) - assim o valor gravado sempre casa com uma opcao
+    // do listbox de Classificacao, em vez de sobrar como texto solto.
+    const normalizado = normalizarColocacao(e.colocacao_bruta)
+    if (!normalizado || normalizado.ordem > 10) continue
+
+    if (e.secao === 'Categoria') {
+      if (normalizarTextoComparacao(e.tipo_campeonato) !== normalizarTextoComparacao(campeonato.tipo_campeonato)) continue
+      atualizadas.set(e.num_catalogo, { ...linha, colocacao: normalizado.label })
+      aplicados++
+    } else {
+      const campo = e.secao === 'Marcha' ? 'pontuacao_andamento' : 'pontuacao_funcional'
+      atualizadas.set(e.num_catalogo, { ...linha, [campo]: String(normalizado.ordem) })
+      aplicados++
+    }
+  }
+
+  return { linhas: linhas.map(l => atualizadas.get(l.num_catalogo) || l), aplicados }
+}
+
 // Cadastro manual de resultado (enquanto a ABCCMM ainda nao publicou o
 // oficial daquela categoria), no mesmo formato de tabela da pagina Final da
 // ABCCMM - toda a categoria de uma vez, pra digitar tabulando entre campos
@@ -800,6 +872,10 @@ function ResultadoManualPanel({ token }: { token: string }) {
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfMsg, setPdfMsg] = useState('')
   const [pdfParseado, setPdfParseado] = useState<PdfParseado | null>(null)
+  const [resumoLoading, setResumoLoading] = useState(false)
+  const [resumoMsg, setResumoMsg] = useState('')
+  const [resumoEntradas, setResumoEntradas] = useState<EntradaResumoParcial[] | null>(null)
+  const [resumoNomeArquivo, setResumoNomeArquivo] = useState('')
   const [busca, setBusca] = useState('')
   // Quando o PDF acha a categoria certa sozinho, a gente monta e mescla as
   // linhas na mao e muda selectedId so pra atualizar o combo - sem essa
@@ -883,6 +959,33 @@ function ResultadoManualPanel({ token }: { token: string }) {
     setLinhasEdit(prev => aplicarPdfNasLinhas(pdfParseado, prev))
     setPdfMsg(`PDF aplicado (${pdfParseado.tipo_competicao || 'resultado'}) - revise e clique em Salvar Todos.`)
     setPdfParseado(null)
+  }
+
+  async function carregarResumoParcial(file: File) {
+    setResumoLoading(true)
+    setResumoMsg('')
+    const formData = new FormData()
+    formData.append('pdf', file)
+    const res = await fetch('/api/admin/resultados-manual/resumo-parcial', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData,
+    })
+    const data = await res.json()
+    setResumoLoading(false)
+    if (!res.ok) { setResumoMsg(data.error || 'Erro ao ler o PDF'); return }
+    setResumoEntradas(data.entradas)
+    setResumoNomeArquivo(file.name)
+    setResumoMsg(`${data.entradas.length} resultado(s) lido(s) de "${file.name}" - selecione uma categoria e clique em "Buscar no Resumo Parcial".`)
+  }
+
+  function buscarNoResumoParcial() {
+    if (!resumoEntradas || !campeonato) return
+    const { linhas, aplicados } = aplicarResumoParcialNasLinhas(resumoEntradas, campeonato, linhasEdit)
+    setLinhasEdit(linhas)
+    setResumoMsg(aplicados > 0
+      ? `${aplicados} resultado(s) encontrado(s) no Resumo Parcial para essa categoria - revise e clique em Salvar Todos.`
+      : 'Nenhum resultado encontrado no Resumo Parcial para essa categoria ainda.')
   }
 
   async function salvarTudo() {
@@ -978,6 +1081,25 @@ function ResultadoManualPanel({ token }: { token: string }) {
       </div>
       {pdfMsg && <p className="text-xs text-[var(--accent)]">{pdfMsg}</p>}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <label className={`px-4 py-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-sm font-semibold ${resumoLoading ? 'opacity-50' : 'cursor-pointer hover:border-[var(--accent)]/50'}`}>
+          {resumoLoading ? 'Lendo Resumo Parcial...' : resumoNomeArquivo ? 'Trocar Resumo Parcial' : 'Carregar Resumo Parcial'}
+          <input
+            type="file"
+            accept="application/pdf"
+            className="hidden"
+            disabled={resumoLoading}
+            onChange={e => { const f = e.target.files?.[0]; if (f) carregarResumoParcial(f); e.target.value = '' }}
+          />
+        </label>
+        {resumoEntradas && campeonato && (
+          <button onClick={buscarNoResumoParcial} className="px-3 py-2 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold">
+            Buscar no Resumo Parcial
+          </button>
+        )}
+      </div>
+      {resumoMsg && <p className="text-xs text-[var(--accent)]">{resumoMsg}</p>}
+
       <input
         type="text"
         value={busca}
@@ -1037,12 +1159,17 @@ function ResultadoManualPanel({ token }: { token: string }) {
                               <input value={l.pontuacao_andamento} onChange={e => atualizarCampo(l.num_catalogo, 'pontuacao_andamento', e.target.value)} className={cellInputClass} />
                             </td>
                             <td className="py-1.5 pr-2">
-                              <input
+                              <select
                                 value={l.colocacao}
                                 onChange={e => atualizarCampo(l.num_catalogo, 'colocacao', e.target.value)}
-                                placeholder="Campeão(ã), 1 Prêmio..."
                                 className={cellInputClass}
-                              />
+                              >
+                                <option value="">—</option>
+                                {OPCOES_COLOCACAO.map(o => <option key={o.valor} value={o.valor}>{o.label}</option>)}
+                                {l.colocacao && !OPCOES_COLOCACAO.some(o => o.valor === l.colocacao) && (
+                                  <option value={l.colocacao}>{l.colocacao}</option>
+                                )}
+                              </select>
                             </td>
                             <td className="py-1.5">
                               {l.origem === 'manual' && (
