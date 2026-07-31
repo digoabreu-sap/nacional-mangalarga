@@ -1215,18 +1215,16 @@ function HomeContent() {
             // quando a categoria+marcha realmente tem os dois modos - senao
             // vira falso-positivo (categoria inteira cadastrada com um so
             // tipo_campeonato que nao seja literalmente "Convencional").
-            // Nas listas de Campeao dos Campeoes/Grande Campeonato, o
-            // animal pode estar ali por ter sido Campeao de Marcha da
-            // categoria dele (Art. 73 par. 5 do regulamento incorpora
-            // esses ao grupo pro julgamento do quesito Marcha) sem ter
-            // sido Campeao/Reservado da Categoria - nesse caso ele so
-            // disputa a marcha aqui dentro, igual um animal
-            // Exclusivamente Marcha, entao mostra o mesmo selo.
-            const campeaoDeMarchaSemCategoria = tipoDaCategoriaEspecial(categoria) !== null &&
-              normalizarColocacaoPorRank(resultado?.pontuacao_andamento ?? null)?.ordem === 1 &&
-              ![1, 2].includes(normalizarColocacao(resultado?.colocacao ?? null)?.ordem ?? -1)
             const exclMarchaAtivo = ehExcecaoMarcha(animal.categoria, animal.tipo_marcha, animal.tipo_campeonato, categoriasMistas) ||
-              animal.tambem_excl_marcha || campeaoDeMarchaSemCategoria
+              animal.tambem_excl_marcha
+            // Nas listas de Campeao dos Campeoes/Grande Campeonato, alem do
+            // selo Excl. Marcha (que segue o cadastro do animal no
+            // catalogo), mostra tambem um selo informativo "Marcha" quando
+            // ele foi Campeao no quesito Marcha da categoria de origem
+            // (Art. 73 par. 5 do regulamento) - independente de tambem ter
+            // sido Campeao/Reservado da Categoria.
+            const campeaoDeMarchaEspecial = tipoDaCategoriaEspecial(categoria) !== null &&
+              normalizarColocacaoPorRank(resultado?.pontuacao_andamento ?? null)?.ordem === 1
             const idxEntre7 = marcLocal.entre7.indexOf(animal.id)
             const idxOitava = marcLocal.oitavaATreze.indexOf(animal.id)
             const posicaoSimulada = simulacaoMarcha.posicoes.get(animal.id)
@@ -1255,6 +1253,11 @@ function HomeContent() {
                     {exclMarchaAtivo && (
                       <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-600/10 text-red-600 dark:text-red-400">
                         Excl. Marcha
+                      </span>
+                    )}
+                    {campeaoDeMarchaEspecial && (
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-blue-600/10 text-blue-600 dark:text-blue-400">
+                        Marcha
                       </span>
                     )}
                     {/* Se o admin ja definiu isso pra categoria, vira selo
