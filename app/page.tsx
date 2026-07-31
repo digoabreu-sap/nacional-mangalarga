@@ -847,6 +847,7 @@ function HomeContent() {
       const linhas = respostas.flatMap(r => r.data || []) as {
         num_catalogo: string; nome: string; categoria: string; tipo_marcha: string
         registro: string | null; haras: string | null; expositor: string | null; ordem: number
+        pai: string | null; pai_registro: string | null; mae: string | null; mae_registro: string | null
       }[]
       // Ordem por numero de catalogo (nao pela ordem que o admin inseriu em
       // Campeoes) - mais facil de achar um animal especifico na lista.
@@ -864,7 +865,7 @@ function HomeContent() {
         tipo_campeonato: 'Convencional',
         tipo_marcha: l.tipo_marcha,
         categoria: l.categoria,
-        pai: '', pai_registro: '', mae: '', mae_registro: '',
+        pai: l.pai || '', pai_registro: l.pai_registro || '', mae: l.mae || '', mae_registro: l.mae_registro || '',
         criador: '', expositor: l.expositor || '',
         haras: l.haras, cidade: null, uf: null,
         destaque: false, tambem_excl_marcha: false, finalista_marcha: false, retirado: false,
