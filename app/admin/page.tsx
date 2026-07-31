@@ -1568,11 +1568,23 @@ const CAMPEOES_TIPO_LABEL: Record<TipoCampeaoDosCampeoes, string> = {
   grande_jovem_femea: 'Grande Campeonato Jovem da Raça — Fêmeas',
 }
 
+type MotivoPrePreenchimento = 'campeao_categoria' | 'reservado_categoria' | 'campeao_marcha'
+type CandidatoPrePreenchimento = {
+  num_catalogo: string; nome: string; categoria: string; haras: string | null
+  motivos: MotivoPrePreenchimento[]; ja_na_lista: boolean
+}
+const MOTIVO_LABEL: Record<MotivoPrePreenchimento, string> = {
+  campeao_categoria: 'Campeão de Categoria',
+  reservado_categoria: 'Reservado de Categoria',
+  campeao_marcha: 'Campeão de Marcha',
+}
+
 // 6 campeonatos no total (3 tipos x 2 marchas). Diferente do resto do site,
-// esses juntam animais de VARIAS categorias (os campeoes de marcha de cada
-// categoria voltam a pista - Art. 76 do regulamento), entao nao da pra
-// calcular automaticamente por categoria+marcha - o admin monta a lista na
-// mao, inserindo/removendo pelo numero de catalogo.
+// esses juntam animais de VARIAS categorias (os campeoes de cada categoria
+// voltam a pista - Art. 73-76 do regulamento) - por isso tem o botao de
+// pre-preenchimento (calcula quem se classifica a partir dos resultados ja
+// lancados e so SUGERE - o admin revisa e decide o que realmente entra),
+// alem do cadastro manual pelo numero de catalogo pra qualquer ajuste.
 function CampeoesPanel({ token }: { token: string }) {
   const [tipo, setTipo] = useState<TipoCampeaoDosCampeoes>('macho')
   const [tipoMarcha, setTipoMarcha] = useState<'MB' | 'MP'>('MB')
@@ -1583,6 +1595,10 @@ function CampeoesPanel({ token }: { token: string }) {
   const [removendo, setRemovendo] = useState<string | null>(null)
   const [msg, setMsg] = useState('')
   const [erro, setErro] = useState('')
+  const [prePreenchendo, setPrePreenchendo] = useState(false)
+  const [candidatos, setCandidatos] = useState<CandidatoPrePreenchimento[] | null>(null)
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set())
+  const [salvandoSelecionados, setSalvandoSelecionados] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1629,11 +1645,52 @@ function CampeoesPanel({ token }: { token: string }) {
     load()
   }
 
+  async function buscarPrePreenchimento() {
+    setPrePreenchendo(true)
+    setCandidatos(null)
+    setErro('')
+    const params = new URLSearchParams({ tipo, tipo_marcha: tipoMarcha })
+    const res = await fetch(`/api/admin/campeoes-dos-campeoes/pre-preencher?${params}`, { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setPrePreenchendo(false)
+    if (!res.ok) { setErro(data.error || 'Erro ao calcular pré-preenchimento'); return }
+    const lista: CandidatoPrePreenchimento[] = data.candidatos || []
+    setCandidatos(lista)
+    setSelecionados(new Set(lista.filter(c => !c.ja_na_lista).map(c => c.num_catalogo)))
+  }
+
+  function toggleSelecionado(numCatalogo: string) {
+    setSelecionados(prev => {
+      const novo = new Set(prev)
+      if (novo.has(numCatalogo)) novo.delete(numCatalogo)
+      else novo.add(numCatalogo)
+      return novo
+    })
+  }
+
+  async function salvarSelecionados() {
+    setSalvandoSelecionados(true)
+    await Promise.all([...selecionados].map(numCatalogo =>
+      fetch('/api/admin/campeoes-dos-campeoes', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo, tipo_marcha: tipoMarcha, num_catalogo: numCatalogo }),
+      })
+    ))
+    const quantidade = selecionados.size
+    setSalvandoSelecionados(false)
+    setCandidatos(null)
+    setSelecionados(new Set())
+    setMsg(`${quantidade} animal${quantidade === 1 ? '' : 'is'} adicionado${quantidade === 1 ? '' : 's'}!`)
+    setTimeout(() => setMsg(''), 3000)
+    load()
+  }
+
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold">Campeão dos Campeões / Campeã das Campeãs</h3>
       <p className="text-xs text-[var(--text-muted)]">
-        Monte a lista de cada um dos 6 campeonatos inserindo o número de catálogo do animal. Diferente do resto do site, esses campeonatos juntam animais de categorias diferentes (os campeões de marcha de cada categoria), então não tem como calcular automaticamente - a lista é só o cadastro dos participantes, não calcula resultado.
+        Monte a lista de cada um dos 6 campeonatos inserindo o número de catálogo do animal, ou use o "Pré-preencher automaticamente" abaixo pra sugerir os classificados a partir dos resultados já lançados. Diferente do resto do site, esses campeonatos juntam animais de categorias diferentes (os campeões de cada categoria), então essa lista é só o cadastro dos participantes - não calcula resultado.
       </p>
 
       <div className="flex gap-2 flex-wrap">
@@ -1679,6 +1736,60 @@ function CampeoesPanel({ token }: { token: string }) {
           {adicionando ? 'Adicionando...' : 'Adicionar'}
         </button>
       </div>
+
+      <button
+        onClick={buscarPrePreenchimento}
+        disabled={prePreenchendo}
+        className="px-4 py-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-sm font-semibold disabled:opacity-50 hover:border-[var(--accent)]/50"
+      >
+        {prePreenchendo ? 'Calculando...' : 'Pré-preencher automaticamente'}
+      </button>
+      <p className="text-[10px] text-[var(--text-muted)] -mt-1">
+        Sugere quem se classifica com base nos resultados já lançados (Campeão e Reservado de Categoria, mais o Campeão de Marcha de cada categoria) - você revisa e escolhe o que entra antes de salvar.
+      </p>
+
+      {candidatos && (
+        <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold">Revisar pré-preenchimento ({candidatos.length} encontrado{candidatos.length === 1 ? '' : 's'})</p>
+            <button onClick={() => { setCandidatos(null); setSelecionados(new Set()) }} className="text-[10px] text-[var(--text-muted)]">Cancelar</button>
+          </div>
+          {candidatos.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)]">Nenhum resultado de Categoria ou Marcha encontrado ainda pra esse tipo.</p>
+          ) : (
+            <>
+              <div className="max-h-72 overflow-y-auto space-y-1">
+                {candidatos.map(c => (
+                  <label
+                    key={c.num_catalogo}
+                    className={`flex items-start gap-2 text-xs py-1.5 px-2 rounded-lg ${c.ja_na_lista ? 'opacity-50' : 'cursor-pointer hover:bg-[var(--bg-card-hover)]'}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 flex-shrink-0"
+                      checked={c.ja_na_lista || selecionados.has(c.num_catalogo)}
+                      disabled={c.ja_na_lista}
+                      onChange={() => toggleSelecionado(c.num_catalogo)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{c.num_catalogo} — {c.nome}{c.ja_na_lista ? ' (já na lista)' : ''}</p>
+                      <p className="text-[var(--text-muted)] truncate">{c.categoria} · {c.motivos.map(m => MOTIVO_LABEL[m]).join(', ')}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <button
+                onClick={salvarSelecionados}
+                disabled={salvandoSelecionados || selecionados.size === 0}
+                className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+              >
+                {salvandoSelecionados ? 'Adicionando...' : `Adicionar ${selecionados.size} Selecionado${selecionados.size === 1 ? '' : 's'}`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {erro && <p className="text-sm text-red-400">{erro}</p>}
       {msg && <p className="text-sm text-green-400">{msg}</p>}
 
