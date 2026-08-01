@@ -27,6 +27,12 @@ export function separarResultadoPrincipal<T extends ResultadoComContexto>(
     l.categoria === animal.categoria && l.tipo_marcha === animal.tipo_marcha && l.tipo_campeonato === animal.tipo_campeonato
   )
   const principal = exato ?? linhas.find(l => l.categoria === animal.categoria && l.tipo_marcha === animal.tipo_marcha) ?? null
-  const extras = linhas.filter(l => l !== principal)
+  // So conta como resultado "extra" de verdade quando ja tem alguma nota
+  // lancada (colocacao ou pontuacao_andamento) - a ABCCMM as vezes cria a
+  // linha da categoria/campeonato assim que ele e definido (ex: os animais
+  // do Grande Campeonato Jovem da Raca), bem antes de ele ser julgado. Sem
+  // esse filtro, aparecia um selo extra vazio ("—") pra todo mundo que so
+  // esta INSCRITO no campeonato, ainda sem resultado nenhum.
+  const extras = linhas.filter(l => l !== principal && (l.colocacao || l.pontuacao_andamento))
   return { principal, extras }
 }
