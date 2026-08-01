@@ -456,14 +456,29 @@ function HomeContent() {
     })
   }, [campeonatoEncerrado, animals])
   const animalsExibidos = useMemo(() => {
-    if (adminDefiniuEntreOsSeteOuRetirado || campeonatoEncerrado || !simulacaoHabilitada) return animals
-    const porId = new Map(animals.map(a => [a.id, a]))
+    // Nos campeonatos "Campeao dos Campeoes"/"Campea das Campeas" (que
+    // juntam Campeao de Marcha + Campeao/Reservado de Categoria de cada
+    // categoria de origem - Art. 73-76), o quesito Morfologia dessa fase
+    // final so e disputado por quem foi Campeao ou Reservado de Categoria
+    // na categoria de origem (quem entrou so como Campeao de Marcha nao
+    // participa da Morfologia). Filtra pela colocacao (texto) da categoria
+    // de origem, ja carregada em resultadosPorCatalogo.
+    const especial = tipoDaCategoriaEspecial(categoria) !== null
+    const baseAnimals = especial && faseAtual === 'morfologia'
+      ? animals.filter(a => {
+          const colocacaoBruta = a.num_catalogo ? resultadosPorCatalogo[a.num_catalogo]?.colocacao ?? null : null
+          const ordem = normalizarColocacao(colocacaoBruta)?.ordem
+          return ordem === 1 || ordem === 2
+        })
+      : animals
+    if (adminDefiniuEntreOsSeteOuRetirado || campeonatoEncerrado || !simulacaoHabilitada) return baseAnimals
+    const porId = new Map(baseAnimals.map(a => [a.id, a]))
     const usados = new Set<number>()
     const entre7Ordenados: Animal[] = []
     const oitavaOrdenados: Animal[] = []
     // Normalmente so tem 1 categoria+marcha na lista (visao travada da
     // pista), mas percorre todas as combinacoes presentes por seguranca.
-    const chaves = new Set(animals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
+    const chaves = new Set(baseAnimals.map(a => chaveMarcacoes(a.categoria, a.tipo_marcha)))
     for (const chave of chaves) {
       const [categoria, tipoMarcha] = chave.split('||')
       const marc = marcacoesDaCategoria(marcacoesLocais, categoria, tipoMarcha)
@@ -478,14 +493,14 @@ function HomeContent() {
     }
     const meio: Animal[] = []
     const baixa: Animal[] = []
-    for (const a of animals) {
+    for (const a of baseAnimals) {
       if (usados.has(a.id)) continue
       const marc = marcacoesDaCategoria(marcacoesLocais, a.categoria, a.tipo_marcha)
       if (marc.retirado.includes(a.id)) baixa.push(a)
       else meio.push(a)
     }
     return [...entre7Ordenados, ...oitavaOrdenados, ...meio, ...baixa]
-  }, [animals, adminDefiniuEntreOsSeteOuRetirado, campeonatoEncerrado, marcacoesLocais, simulacaoHabilitada])
+  }, [animals, adminDefiniuEntreOsSeteOuRetirado, campeonatoEncerrado, marcacoesLocais, simulacaoHabilitada, categoria, faseAtual, resultadosPorCatalogo])
 
   // Simula a posicao na marcha (1 a 13: 7 do "Entre os 7" + 6 do "8 a 13",
   // na ordem em que o usuario organizou os cards) e a nota de classificacao
