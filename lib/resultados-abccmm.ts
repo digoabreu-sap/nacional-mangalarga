@@ -139,12 +139,20 @@ function normalizarCabecalho(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
-// Busca a tabela de Resultado Final de uma categoria. Le os indices das
-// colunas pelo cabecalho (em vez de posicao fixa) porque categorias
-// castrado/exclusivamente-marcha nao tem prova de Funcional/Morfologia e
-// a tabela vem com menos colunas. Uma categoria ainda nao julgada
-// simplesmente retorna uma tabela vazia.
-export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
+// Busca a tabela de Resultado Final de uma categoria (modo 'final'), ou a
+// pagina de Andamento/Marcha usada como fallback (modo 'marcha') pra
+// categorias sem quesito Categoria combinado (Castrado). Le os indices das
+// colunas pelo cabecalho (em vez de posicao fixa) porque a tabela varia de
+// formato: a Final tem Funcional/Morfologia/Andamento/Classificação, mas a
+// de Andamento tem uma coluna por arbitro (nomes variaveis, nao da pra
+// casar por texto) + Total + "Classif." (abreviado, e so um numero de
+// posicao/rank cru - nao um texto de colocacao como "Campeão"). Por isso
+// no modo 'marcha' esse numero vira pontuacao_andamento (mesmo padrao de
+// rank cru usado em todo o resto do app pro quesito Marcha isolado), nunca
+// colocacao (que so faz sentido pra a classificacao combinada da Categoria,
+// que Castrado nao tem). Uma categoria ainda nao julgada simplesmente
+// retorna uma tabela vazia.
+export async function fetchResultTable(url: string, modo: 'final' | 'marcha' = 'final'): Promise<LinhaResultado[]> {
   let res: Response
   try {
     res = await fetchComTimeout(url)
@@ -180,10 +188,16 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
   headerRow.find('th').each((idx, th) => {
     colIndex[normalizarCabecalho($(th).text())] = idx
   })
-  const idxFuncional = colIndex['funcional']
-  const idxMorfologia = colIndex['morfologia']
-  const idxAndamento = colIndex['andamento']
-  const idxClassificacao = colIndex['classificacao']
+  // Prefixo em vez de igualdade exata: a pagina de Andamento abrevia pra
+  // "Classif." em vez de "Classificação".
+  const encontrarColuna = (prefixo: string): number | undefined => {
+    const chave = Object.keys(colIndex).find(k => k.startsWith(prefixo))
+    return chave !== undefined ? colIndex[chave] : undefined
+  }
+  const idxFuncional = encontrarColuna('funcional')
+  const idxMorfologia = encontrarColuna('morfologia')
+  const idxAndamento = encontrarColuna('andamento')
+  const idxClassificacao = encontrarColuna('classif')
 
   tabela.find('tr').each((_, tr) => {
     const $tr = $(tr)
@@ -208,10 +222,10 @@ export async function fetchResultTable(url: string): Promise<LinhaResultado[]> {
       numCatalogo,
       nomeAnimal,
       idAnimalAbccmm,
-      pontuacaoFuncional: celTexto(idxFuncional),
-      pontuacaoMorfologia: celTexto(idxMorfologia),
-      pontuacaoAndamento: celTexto(idxAndamento),
-      colocacao: celTexto(idxClassificacao),
+      pontuacaoFuncional: modo === 'final' ? celTexto(idxFuncional) : null,
+      pontuacaoMorfologia: modo === 'final' ? celTexto(idxMorfologia) : null,
+      pontuacaoAndamento: modo === 'final' ? celTexto(idxAndamento) : celTexto(idxClassificacao),
+      colocacao: modo === 'final' ? celTexto(idxClassificacao) : null,
     })
   })
 
@@ -271,15 +285,16 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
 
   await withConcurrency(classes, 4, async (classe) => {
     try {
-      let resultado = await fetchResultTable(classe.urlFinal)
+      let resultado = await fetchResultTable(classe.urlFinal, 'final')
       // Categorias Castrado (e possivelmente Exclusivamente Marcha) nao
       // tem quesito "Categoria" combinado - a pagina Final delas fica
       // sempre vazia mesmo depois de julgadas. Se a Final nao trouxe nada,
-      // tenta a pagina de Marcha antes de desistir: pra esse tipo de
-      // campeonato ela e o resultado de verdade (Classificacao/Andamento
-      // saem de la, nao existe pagina Final separada pra combinar).
+      // tenta a pagina de Andamento/Marcha antes de desistir: pra esse
+      // tipo de campeonato ela e o resultado de verdade (mas o formato e
+      // diferente - uma coluna por arbitro + "Classif.", que vira
+      // pontuacao_andamento, nunca colocacao).
       if (resultado.length === 0 && classe.urlMarcha) {
-        resultado = await fetchResultTable(classe.urlMarcha)
+        resultado = await fetchResultTable(classe.urlMarcha, 'marcha')
       }
       for (const linha of resultado) {
         pendentes.push({
