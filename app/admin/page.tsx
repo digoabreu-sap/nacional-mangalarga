@@ -1077,6 +1077,30 @@ function ResultadoManualPanel({ token }: { token: string }) {
     loadDados()
   }
 
+  // Mesma coisa, mas pra categoria inteira de uma vez - quando o roster
+  // veio TODO oficial vazio (destravar animal por animal nao e viavel antes
+  // de importar PDF/Resumo Parcial). So mexe nas linhas realmente vazias.
+  const [desbloqueandoTodos, setDesbloqueandoTodos] = useState(false)
+  const linhasOficiaisVazias = linhasEdit.filter(l =>
+    l.origem === 'abccmm' && !l.pontuacao_funcional && !l.pontuacao_morfologia && !l.pontuacao_andamento && !l.colocacao
+  )
+  async function desbloquearTodos() {
+    if (!campeonato || linhasOficiaisVazias.length === 0) return
+    setDesbloqueandoTodos(true)
+    const res = await fetch('/api/admin/resultados-manual/desbloquear', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria }),
+    })
+    setDesbloqueandoTodos(false)
+    if (res.ok) {
+      const data = await res.json()
+      setMsg(`${data.desbloqueados} resultado(s) destravado(s) - agora pode editar ou importar PDF/Resumo Parcial.`)
+      setTimeout(() => setMsg(''), 6000)
+    }
+    loadDados()
+  }
+
   const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
   const cellInputClass = "w-full py-1 px-1.5 bg-[var(--bg-primary)] border border-[var(--border)] rounded text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
 
@@ -1176,6 +1200,21 @@ function ResultadoManualPanel({ token }: { token: string }) {
           <p className="text-xs text-[var(--text-muted)]">Nenhum animal cadastrado nessa categoria.</p>
         ) : (
           <>
+            {linhasOficiaisVazias.length > 0 && (
+              <div className="flex items-center justify-between gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                <p className="text-xs text-red-600 dark:text-red-400">
+                  {linhasOficiaisVazias.length} resultado(s) oficial(is) vazio(s) nessa categoria (ex: roster publicado antes do julgamento) - travados pro cadastro manual.
+                </p>
+                <button
+                  type="button"
+                  onClick={desbloquearTodos}
+                  disabled={desbloqueandoTodos}
+                  className="flex-shrink-0 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50 whitespace-nowrap"
+                >
+                  {desbloqueandoTodos ? 'Destravando...' : 'Destravar Todos'}
+                </button>
+              </div>
+            )}
             <div className="overflow-x-auto -mx-1 px-1">
               <table className="w-full text-xs border-collapse min-w-[38rem]">
                 <thead>
