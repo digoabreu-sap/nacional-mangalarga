@@ -18,6 +18,12 @@ export type ClasseResultado = {
   campeonatoAbccmm: number
   eventoAbccmm: number
   urlFinal: string
+  // Link da coluna "Marcha" (2a coluna) - usado como fallback quando a
+  // pagina Final vem vazia. Categorias Castrado (e potencialmente
+  // Exclusivamente Marcha) nao tem quesito "Categoria" combinado - so
+  // marcha, entao a pagina Final delas nunca tem linha nenhuma mesmo
+  // depois de julgadas; o resultado de verdade so aparece na pagina de Marcha.
+  urlMarcha: string | null
 }
 
 export type LinhaResultado = {
@@ -110,6 +116,8 @@ export async function fetchClasses(): Promise<ClasseResultado[]> {
     const eventoAbccmm = parseQueryParam(finalHref, 'evento')
     if (categoriaAbccmm == null || campeonatoAbccmm == null || eventoAbccmm == null) return
 
+    const marchaHref = $(cells[1]).find('a').attr('href') || ''
+
     classes.push({
       tipoCampeonato,
       tipoMarcha,
@@ -118,6 +126,7 @@ export async function fetchClasses(): Promise<ClasseResultado[]> {
       campeonatoAbccmm,
       eventoAbccmm,
       urlFinal: new URL(finalHref, BASE_URL).toString(),
+      urlMarcha: marchaHref ? new URL(marchaHref, BASE_URL).toString() : null,
     })
   })
 
@@ -262,7 +271,16 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
 
   await withConcurrency(classes, 4, async (classe) => {
     try {
-      const resultado = await fetchResultTable(classe.urlFinal)
+      let resultado = await fetchResultTable(classe.urlFinal)
+      // Categorias Castrado (e possivelmente Exclusivamente Marcha) nao
+      // tem quesito "Categoria" combinado - a pagina Final delas fica
+      // sempre vazia mesmo depois de julgadas. Se a Final nao trouxe nada,
+      // tenta a pagina de Marcha antes de desistir: pra esse tipo de
+      // campeonato ela e o resultado de verdade (Classificacao/Andamento
+      // saem de la, nao existe pagina Final separada pra combinar).
+      if (resultado.length === 0 && classe.urlMarcha) {
+        resultado = await fetchResultTable(classe.urlMarcha)
+      }
       for (const linha of resultado) {
         pendentes.push({
           tipo_campeonato: classe.tipoCampeonato,
