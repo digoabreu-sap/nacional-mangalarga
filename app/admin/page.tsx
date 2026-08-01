@@ -1060,6 +1060,23 @@ function ResultadoManualPanel({ token }: { token: string }) {
     carregarListaCampeonatos()
   }
 
+  // Paliativo: a ABCCMM as vezes publica uma linha "oficial" ja travada mas
+  // sem nenhum dado (colocacao, notas todas vazias) - destrava ela (volta
+  // pra origem manual) pra o admin poder digitar um valor provisorio
+  // enquanto o resultado de verdade nao chega.
+  const [desbloqueando, setDesbloqueando] = useState<string | null>(null)
+  async function desbloquear(numCatalogo: string) {
+    if (!campeonato) return
+    setDesbloqueando(numCatalogo)
+    await fetch('/api/admin/resultados-manual/desbloquear', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria, num_catalogo: numCatalogo }),
+    })
+    setDesbloqueando(null)
+    loadDados()
+  }
+
   const inputClass = "w-full py-2 px-3 bg-[var(--bg-primary)] border border-[var(--border)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--accent)]"
   const cellInputClass = "w-full py-1 px-1.5 bg-[var(--bg-primary)] border border-[var(--border)] rounded text-xs text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
 
@@ -1185,7 +1202,22 @@ function ResultadoManualPanel({ token }: { token: string }) {
                             <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.pontuacao_morfologia || '—'}</td>
                             <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.pontuacao_andamento || '—'}</td>
                             <td className="py-1.5 pr-2 text-[var(--text-muted)]">{l.colocacao || '—'}</td>
-                            <td className="py-1.5"><span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/10 whitespace-nowrap">OFICIAL</span></td>
+                            <td className="py-1.5">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-black/10 whitespace-nowrap">OFICIAL</span>
+                                {!l.pontuacao_funcional && !l.pontuacao_morfologia && !l.pontuacao_andamento && !l.colocacao && (
+                                  <button
+                                    type="button"
+                                    onClick={() => desbloquear(l.num_catalogo)}
+                                    disabled={desbloqueando === l.num_catalogo}
+                                    title="Resultado oficial veio vazio (ex: roster publicado antes do julgamento) - destrava pra digitar um valor provisorio ate a ABCCMM publicar o de verdade"
+                                    className="text-[9px] text-[var(--accent)] underline whitespace-nowrap disabled:opacity-50"
+                                  >
+                                    {desbloqueando === l.num_catalogo ? 'Destravando...' : 'Editar'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
                           </>
                         ) : (
                           <>

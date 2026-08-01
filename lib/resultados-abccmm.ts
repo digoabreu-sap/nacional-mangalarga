@@ -232,6 +232,23 @@ export async function fetchResultTable(url: string, modo: 'final' | 'marcha' = '
   return linhas
 }
 
+// A ABCCMM as vezes publica a pagina Final com o roster inteiro da
+// categoria ANTES de qualquer julgamento - todas as celulas
+// Funcional/Morfologia/Andamento/Classificacao vem vazias ou so com "-" (o
+// mesmo "-" usado na pagina de Andamento pra quem ainda nao foi
+// classificado). Sem filtrar essas linhas, elas eram gravadas como
+// resultado OFICIAL (origem 'abccmm') mesmo sem nenhum dado real - o que
+// alem de inutil TRAVA a edicao manual (linha oficial nunca e editavel) e
+// ainda faz a categoria parecer "ja tem resultado" pro fallback Final->
+// Marcha, escondendo dados de verdade que podem ja existir na pagina de
+// Andamento enquanto a Final so lista o roster.
+function temValor(v: string | null): boolean {
+  return v != null && v.trim() !== '' && v.trim() !== '-'
+}
+function temDadoReal(l: LinhaResultado): boolean {
+  return temValor(l.pontuacaoFuncional) || temValor(l.pontuacaoMorfologia) || temValor(l.pontuacaoAndamento) || temValor(l.colocacao)
+}
+
 async function withConcurrency<T>(items: T[], limit: number, worker: (item: T) => Promise<void>): Promise<void> {
   let idx = 0
   async function run() {
@@ -285,16 +302,17 @@ export async function refreshAllResults(): Promise<RefreshSummary> {
 
   await withConcurrency(classes, 4, async (classe) => {
     try {
-      let resultado = await fetchResultTable(classe.urlFinal, 'final')
+      let resultado = (await fetchResultTable(classe.urlFinal, 'final')).filter(temDadoReal)
       // Categorias Castrado (e possivelmente Exclusivamente Marcha) nao
       // tem quesito "Categoria" combinado - a pagina Final delas fica
-      // sempre vazia mesmo depois de julgadas. Se a Final nao trouxe nada,
-      // tenta a pagina de Andamento/Marcha antes de desistir: pra esse
-      // tipo de campeonato ela e o resultado de verdade (mas o formato e
-      // diferente - uma coluna por arbitro + "Classif.", que vira
-      // pontuacao_andamento, nunca colocacao).
+      // sempre vazia mesmo depois de julgadas. Se a Final nao trouxe
+      // NENHUMA linha com dado real (vazia, ou so roster sem julgamento
+      // ainda), tenta a pagina de Andamento/Marcha antes de desistir: pra
+      // esse tipo de campeonato ela e o resultado de verdade (mas o
+      // formato e diferente - uma coluna por arbitro + "Classif.", que
+      // vira pontuacao_andamento, nunca colocacao).
       if (resultado.length === 0 && classe.urlMarcha) {
-        resultado = await fetchResultTable(classe.urlMarcha, 'marcha')
+        resultado = (await fetchResultTable(classe.urlMarcha, 'marcha')).filter(temDadoReal)
       }
       for (const linha of resultado) {
         pendentes.push({
