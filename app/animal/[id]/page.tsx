@@ -10,7 +10,7 @@ import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
-import { separarResultadoPrincipal, type ResultadoComContexto } from '@/lib/resultadosAnimal'
+import { separarResultadoPrincipal, formatTituloExtra, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
@@ -100,7 +100,7 @@ function ResultadoExtraCard({ resultado }: { resultado: ResultadoComContexto }) 
       <div className="flex items-center gap-2 mb-3">
         <span className="text-base leading-none">🏆</span>
         <h3 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide">
-          {resultado.tipo_campeonato}{resultado.categoria && resultado.categoria !== resultado.tipo_campeonato ? ` · ${resultado.categoria}` : ''}
+          {formatTituloExtra(resultado)}
         </h3>
       </div>
       {resultado.origem === 'manual' && (

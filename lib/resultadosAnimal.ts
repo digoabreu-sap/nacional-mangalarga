@@ -1,3 +1,5 @@
+import { formatColocacaoOficial, formatColocacaoMarcha } from './colocacao'
+
 // Separa as linhas de nm_resultados de um animal (identificado por
 // num_catalogo) entre o resultado da SUA categoria de origem (o "principal",
 // mesmo formato exibido sempre) e resultados extras em OUTRO campeonato -
@@ -35,4 +37,22 @@ export function separarResultadoPrincipal<T extends ResultadoComContexto>(
   // esta INSCRITO no campeonato, ainda sem resultado nenhum.
   const extras = linhas.filter(l => l !== principal && (l.colocacao || l.pontuacao_andamento))
   return { principal, extras }
+}
+
+// Classificacao pra exibir no selo de resultado extra: prefere a colocacao
+// (quesito Categoria combinado), mas cai pro rank de Marcha quando so ele
+// existe - igual ja fazemos pro resto do site pra campeonatos marcha-only
+// (Castrado e afins nunca tem colocacao preenchida, so pontuacao_andamento;
+// sem esse fallback, o selo mostrava "—" pra todo mundo mesmo com nota
+// lancada, porque so olhava colocacao).
+export function formatClassificacaoExtra(l: ResultadoComContexto): string {
+  return l.colocacao ? formatColocacaoOficial(l.colocacao) : formatColocacaoMarcha(l.pontuacao_andamento)
+}
+
+// So o nome da categoria/campeonato - sem o tipo_campeonato como prefixo
+// (que hoje e so um rotulo interno tecnico, tipo "Grande Campeonato" pros
+// cadastrados manualmente - nao acrescenta nada pro usuario e so deixava o
+// selo mais verboso: "Grande Campeonato · Campeão dos Campeões Castrado").
+export function formatTituloExtra(l: ResultadoComContexto): string {
+  return l.categoria
 }

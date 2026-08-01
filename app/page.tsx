@@ -13,7 +13,7 @@ import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha, normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 import { tipoDaCategoriaEspecial } from '@/lib/campeoesDosCampeoes'
-import { separarResultadoPrincipal, type ResultadoComContexto } from '@/lib/resultadosAnimal'
+import { separarResultadoPrincipal, formatClassificacaoExtra, formatTituloExtra, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 import { TemaCoresConfig, StatusCor, corEfetiva, estiloTag } from '@/lib/temaCores'
 
 const MARCHAS = [
@@ -1499,7 +1499,7 @@ function HomeContent() {
                   {animal.num_catalogo && resultadosExtrasPorCatalogo[animal.num_catalogo]?.map((extra, i) => (
                     <p key={i} className="text-xs text-[var(--accent)] mt-1 font-medium flex items-center gap-1">
                       <span>🏆</span>
-                      <span>{extra.tipo_campeonato}{extra.categoria && extra.categoria !== extra.tipo_campeonato ? ` · ${extra.categoria}` : ''}: {formatColocacaoOficial(extra.colocacao)}</span>
+                      <span>{formatTituloExtra(extra)}: {formatClassificacaoExtra(extra)}</span>
                     </p>
                   ))}
                 </div>

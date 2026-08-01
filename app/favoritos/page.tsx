@@ -5,7 +5,7 @@ import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import { formatColocacaoOficial } from '@/lib/colocacao'
-import { separarResultadoPrincipal, type ResultadoComContexto } from '@/lib/resultadosAnimal'
+import { separarResultadoPrincipal, formatClassificacaoExtra, formatTituloExtra, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 
@@ -115,7 +115,7 @@ export default function Favoritos() {
                     {animal.num_catalogo && resultadosExtrasPorCatalogo[animal.num_catalogo]?.map((extra, i) => (
                       <p key={i} className="text-xs text-[var(--accent)] mt-0.5 font-medium flex items-center gap-1">
                         <span>🏆</span>
-                        <span>{extra.tipo_campeonato}{extra.categoria && extra.categoria !== extra.tipo_campeonato ? ` · ${extra.categoria}` : ''}: {formatColocacaoOficial(extra.colocacao)}</span>
+                        <span>{formatTituloExtra(extra)}: {formatClassificacaoExtra(extra)}</span>
                       </p>
                     ))}
                   </div>
