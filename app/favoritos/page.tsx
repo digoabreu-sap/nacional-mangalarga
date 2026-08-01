@@ -5,12 +5,16 @@ import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
 import { formatColocacaoOficial } from '@/lib/colocacao'
+import { separarResultadoPrincipal, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 
 export default function Favoritos() {
   const [animals, setAnimals] = useState<Animal[]>([])
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
+  // Segunda linha de resultado (categoria diferente da origem) quando o
+  // animal tambem disputa um Grande Campeonato/Campeao dos Campeoes.
+  const [resultadosExtrasPorCatalogo, setResultadosExtrasPorCatalogo] = useState<Record<string, ResultadoComContexto[]>>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -32,11 +36,25 @@ export default function Favoritos() {
       if (catalogos.length > 0) {
         const { data: resultados } = await supabase
           .from('nm_resultados')
-          .select('num_catalogo, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento')
+          .select('num_catalogo, categoria, tipo_marcha, tipo_campeonato, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, origem')
           .eq('tipo_prova', 'final')
           .in('num_catalogo', catalogos)
         if (resultados) {
-          setResultadosPorCatalogo(Object.fromEntries(resultados.map(r => [r.num_catalogo, r])))
+          const linhasPorCatalogo = new Map<string, ResultadoComContexto[]>()
+          for (const r of resultados as (ResultadoComContexto & { num_catalogo: string })[]) {
+            if (!linhasPorCatalogo.has(r.num_catalogo)) linhasPorCatalogo.set(r.num_catalogo, [])
+            linhasPorCatalogo.get(r.num_catalogo)!.push(r)
+          }
+          const porId = new Map((data ?? []).map(a => [a.num_catalogo, a]))
+          const principais: Record<string, ResultadoResumo> = {}
+          const extras: Record<string, ResultadoComContexto[]> = {}
+          for (const [num, linhas] of linhasPorCatalogo) {
+            const separado = separarResultadoPrincipal(linhas, porId.get(num) ?? linhas[0])
+            if (separado.principal) principais[num] = separado.principal
+            if (separado.extras.length > 0) extras[num] = separado.extras
+          }
+          setResultadosPorCatalogo(principais)
+          setResultadosExtrasPorCatalogo(extras)
         }
       }
     }
@@ -94,6 +112,12 @@ export default function Favoritos() {
                         Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
                       </p>
                     )}
+                    {animal.num_catalogo && resultadosExtrasPorCatalogo[animal.num_catalogo]?.map((extra, i) => (
+                      <p key={i} className="text-xs text-[var(--accent)] mt-0.5 font-medium flex items-center gap-1">
+                        <span>🏆</span>
+                        <span>{extra.tipo_campeonato}{extra.categoria && extra.categoria !== extra.tipo_campeonato ? ` · ${extra.categoria}` : ''}: {formatColocacaoOficial(extra.colocacao)}</span>
+                      </p>
+                    ))}
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-xs text-[var(--text-muted)] font-mono">Reg. {animal.registro}</p>

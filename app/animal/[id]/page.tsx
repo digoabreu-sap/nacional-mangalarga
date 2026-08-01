@@ -10,6 +10,7 @@ import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
+import { separarResultadoPrincipal, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
@@ -87,6 +88,38 @@ function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) 
   )
 }
 
+// Resultado extra: quando o animal tambem disputa um Grande
+// Campeonato/Campeao dos Campeoes (Art. 73-76), essa segunda classificacao
+// ganha um card proprio, com borda de destaque (troféu) pra deixar claro
+// que e uma disputa DIFERENTE da categoria de origem - visual parecido com
+// ResultadoSection, mas rotulado com o nome do campeonato/categoria em que
+// foi conquistado (texto vem direto de como a ABCCMM publicou).
+function ResultadoExtraCard({ resultado }: { resultado: ResultadoComContexto }) {
+  return (
+    <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--accent)]/30">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-base leading-none">🏆</span>
+        <h3 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide">
+          {resultado.tipo_campeonato}{resultado.categoria && resultado.categoria !== resultado.tipo_campeonato ? ` · ${resultado.categoria}` : ''}
+        </h3>
+      </div>
+      {resultado.origem === 'manual' && (
+        <p className="text-[10px] text-[var(--accent)] text-center mb-2 uppercase tracking-wide font-semibold">Resultado provisório · aguardando confirmação oficial</p>
+      )}
+      <div className="grid grid-cols-2 divide-x divide-[var(--border)] text-center">
+        <div>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Categoria</p>
+          <p className="text-xl font-bold">{formatColocacaoOficial(resultado.colocacao)}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Marcha</p>
+          <p className="text-xl font-bold">{formatColocacaoMarcha(resultado.pontuacao_andamento)}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 type HarasInfo = { nome: string; instagram_url: string | null }
 type AnimalExtra = { instagram_url: string | null; youtube_url: string | null; texto: string | null }
 
@@ -97,6 +130,9 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
   const [loading, setLoading] = useState(true)
   const [isFav, setIsFav] = useState(false)
   const [resultado, setResultado] = useState<ResultadoAnimal | null>(null)
+  // Resultado extra: quando o animal tambem disputa um Grande
+  // Campeonato/Campeao dos Campeoes, alem da sua categoria de origem.
+  const [resultadosExtras, setResultadosExtras] = useState<ResultadoComContexto[]>([])
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
   const [harasInfo, setHarasInfo] = useState<HarasInfo | null>(null)
@@ -147,17 +183,18 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
 
   useEffect(() => {
     async function loadResultados() {
-      if (!animal?.num_catalogo) { setResultado(null); return }
+      if (!animal?.num_catalogo) { setResultado(null); setResultadosExtras([]); return }
+      // Busca TODAS as linhas do animal (nao so a da sua categoria de
+      // origem) - quando ele tambem disputa um Grande Campeonato/Campeao
+      // dos Campeoes, uma segunda linha aparece com categoria propria.
       const { data } = await supabase
         .from('nm_resultados')
-        .select('colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, origem')
-        .eq('tipo_campeonato', animal.tipo_campeonato)
-        .eq('tipo_marcha', animal.tipo_marcha)
-        .eq('categoria', animal.categoria)
+        .select('categoria, tipo_marcha, tipo_campeonato, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, origem')
         .eq('num_catalogo', animal.num_catalogo)
         .eq('tipo_prova', 'final')
-        .limit(1)
-      setResultado(data && data.length > 0 ? data[0] : null)
+      const { principal, extras } = separarResultadoPrincipal((data ?? []) as ResultadoComContexto[], animal)
+      setResultado(principal)
+      setResultadosExtras(extras)
     }
     loadResultados()
   }, [animal])
@@ -301,6 +338,10 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
           </div>
           <ResultadoSection resultado={resultado} />
         </div>
+
+        {resultadosExtras.map((extra, i) => (
+          <ResultadoExtraCard key={i} resultado={extra} />
+        ))}
 
         {/* Quando entra na pista (vinculo com o calendario pela categoria/campeonato) */}
         <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">

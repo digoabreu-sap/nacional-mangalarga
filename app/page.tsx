@@ -13,6 +13,7 @@ import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha, normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 import { tipoDaCategoriaEspecial } from '@/lib/campeoesDosCampeoes'
+import { separarResultadoPrincipal, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 import { TemaCoresConfig, StatusCor, corEfetiva, estiloTag } from '@/lib/temaCores'
 
 const MARCHAS = [
@@ -140,6 +141,11 @@ function HomeContent() {
   const [whatsappConfig, setWhatsappConfig] = useState<{ numero: string | null; mensagem_template: string | null } | null>(null)
   const [temaCores, setTemaCores] = useState<TemaCoresConfig>({})
   const [resultadosPorCatalogo, setResultadosPorCatalogo] = useState<Record<string, ResultadoResumo>>({})
+  // Quando o animal tambem disputa um Grande Campeonato/Campeao dos
+  // Campeoes, uma segunda linha aparece em nm_resultados pra ele (categoria
+  // diferente da sua categoria de origem) - guardada separada pra exibir
+  // como um resultado extra, sem se misturar com o principal.
+  const [resultadosExtrasPorCatalogo, setResultadosExtrasPorCatalogo] = useState<Record<string, ResultadoComContexto[]>>({})
   const [categoriasMistas, setCategoriasMistas] = useState<Set<string>>(new Set())
   useEffect(() => {
     getCategoriasMistas().then(setCategoriasMistas)
@@ -212,14 +218,31 @@ function HomeContent() {
 
     supabase
       .from('nm_resultados')
-      .select('num_catalogo, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento')
+      .select('num_catalogo, categoria, tipo_marcha, tipo_campeonato, colocacao, pontuacao_funcional, pontuacao_morfologia, pontuacao_andamento, origem')
       .eq('tipo_prova', 'final')
       .in('num_catalogo', pendentes)
       .then(({ data }) => {
         if (!data || data.length === 0) return
+        const linhasPorCatalogo = new Map<string, ResultadoComContexto[]>()
+        for (const r of data as (ResultadoComContexto & { num_catalogo: string })[]) {
+          if (!linhasPorCatalogo.has(r.num_catalogo)) linhasPorCatalogo.set(r.num_catalogo, [])
+          linhasPorCatalogo.get(r.num_catalogo)!.push(r)
+        }
+        const porId = new Map(animals.map(a => [a.num_catalogo, a]))
         setResultadosPorCatalogo(prev => {
           const next = { ...prev }
-          for (const r of data) next[r.num_catalogo] = r
+          for (const [num, linhas] of linhasPorCatalogo) {
+            const { principal } = separarResultadoPrincipal(linhas, porId.get(num) ?? linhas[0])
+            if (principal) next[num] = principal
+          }
+          return next
+        })
+        setResultadosExtrasPorCatalogo(prev => {
+          const next = { ...prev }
+          for (const [num, linhas] of linhasPorCatalogo) {
+            const { extras } = separarResultadoPrincipal(linhas, porId.get(num) ?? linhas[0])
+            if (extras.length > 0) next[num] = extras
+          }
           return next
         })
       })
@@ -1468,6 +1491,17 @@ function HomeContent() {
                       ) : '—'}
                     </p>
                   )}
+                  {/* Resultado extra: quando o animal tambem disputa um
+                      Grande Campeonato/Campeao dos Campeoes (alem da sua
+                      categoria de origem), mostra a colocacao de la numa
+                      linha separada e destacada - nao mistura com o
+                      resultado principal acima. */}
+                  {animal.num_catalogo && resultadosExtrasPorCatalogo[animal.num_catalogo]?.map((extra, i) => (
+                    <p key={i} className="text-xs text-[var(--accent)] mt-1 font-medium flex items-center gap-1">
+                      <span>🏆</span>
+                      <span>{extra.tipo_campeonato}{extra.categoria && extra.categoria !== extra.tipo_campeonato ? ` · ${extra.categoria}` : ''}: {formatColocacaoOficial(extra.colocacao)}</span>
+                    </p>
+                  ))}
                 </div>
                 <div className="flex-shrink-0 flex flex-col items-center gap-1.5">
                   {animal.num_catalogo && (
