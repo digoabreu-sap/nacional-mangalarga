@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
-import { normalizarColocacao } from '@/lib/colocacao'
+import { normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { StatusCor, TemaCoresConfig, DEFAULT_CORES, STATUS_LABEL, corEfetiva, hexParaRgba } from '@/lib/temaCores'
 import DailyViewsChart from '@/components/admin/DailyViewsChart'
 
@@ -887,6 +887,86 @@ function aplicarResumoParcialNasLinhas(
   return { linhas: linhas.map(l => atualizadas.get(l.num_catalogo) || l), aplicados }
 }
 
+type OficialRow = {
+  tipo_campeonato: string; tipo_marcha: string; categoria: string; num_catalogo: string
+  nome_animal: string | null; colocacao: string | null; pontuacao_andamento: string | null
+}
+type Divergencia = {
+  num_catalogo: string; nome_animal: string; categoria: string; tipo_marcha: string; tipo_campeonato: string
+  secao: 'Categoria' | 'Marcha'
+  campo: 'colocacao' | 'pontuacao_andamento'
+  valorOficialLabel: string
+  valorPdfLabel: string
+  valorPdfGravar: string // o que escrever no campo se o admin escolher "usar do PDF"
+}
+
+// Compara o resultado OFICIAL ja sincronizado contra o Resumo Parcial (PDF)
+// e lista so os casos que REALMENTE divergem (as duas fontes existem e
+// discordam) - quando o oficial ainda nao tem nada, isso e so uma
+// pendencia normal (ja coberta pelo cadastro manual), nao uma divergencia.
+//
+// So compara as secoes "Categoria" (-> colocacao) e "Marcha" (->
+// pontuacao_andamento) - "Prova Funcional" fica de fora porque o campo
+// pontuacao_funcional guarda a NOTA bruta vinda da ABCCMM (ex: "192,00"),
+// enquanto o PDF so tem o ROTULO de colocacao daquele quesito - unidades
+// incompativeis, comparar geraria falso-positivo pra quase todo mundo.
+//
+// A secao "Marcha" do PDF junta Convencional e Exclusivamente Marcha sem
+// distinguir tipo_campeonato (mesmo comportamento ja tratado em
+// aplicarResumoParcialNasLinhas) - por isso o casamento pra ela ignora
+// tipo_campeonato, usando so categoria+tipo_marcha+num_catalogo.
+function calcularDivergencias(entradas: EntradaResumoParcial[], oficiais: OficialRow[]): Divergencia[] {
+  const porChave = new Map<string, OficialRow[]>()
+  for (const o of oficiais) {
+    const key = `${normalizarTextoComparacao(o.categoria)}|${o.tipo_marcha}|${o.num_catalogo}`
+    if (!porChave.has(key)) porChave.set(key, [])
+    porChave.get(key)!.push(o)
+  }
+
+  const divergencias: Divergencia[] = []
+  for (const e of entradas) {
+    if (e.secao === 'Prova Funcional') continue
+    const key = `${normalizarTextoComparacao(e.categoria)}|${e.tipo_marcha}|${e.num_catalogo}`
+    const candidatos = porChave.get(key) || []
+    if (candidatos.length === 0) continue
+
+    const oficial = e.secao === 'Categoria'
+      ? candidatos.find(o => normalizarTextoComparacao(o.tipo_campeonato) === normalizarTextoComparacao(e.tipo_campeonato)) ?? candidatos[0]
+      : candidatos[0]
+
+    const normalizadoPdf = normalizarColocacao(e.colocacao_bruta)
+    if (!normalizadoPdf || normalizadoPdf.ordem > 10) continue
+
+    if (e.secao === 'Categoria') {
+      if (!oficial.colocacao) continue
+      const normalizadoOficial = normalizarColocacao(oficial.colocacao)
+      if (normalizadoOficial?.ordem === normalizadoPdf.ordem) continue
+      divergencias.push({
+        num_catalogo: e.num_catalogo, nome_animal: oficial.nome_animal || e.num_catalogo,
+        categoria: oficial.categoria, tipo_marcha: oficial.tipo_marcha, tipo_campeonato: oficial.tipo_campeonato,
+        secao: 'Categoria', campo: 'colocacao',
+        valorOficialLabel: normalizadoOficial?.label ?? oficial.colocacao,
+        valorPdfLabel: normalizadoPdf.label, valorPdfGravar: normalizadoPdf.label,
+      })
+    } else {
+      if (!oficial.pontuacao_andamento) continue
+      const normalizadoOficial = normalizarColocacaoPorRank(oficial.pontuacao_andamento)
+      if (normalizadoOficial?.ordem === normalizadoPdf.ordem) continue
+      divergencias.push({
+        num_catalogo: e.num_catalogo, nome_animal: oficial.nome_animal || e.num_catalogo,
+        categoria: oficial.categoria, tipo_marcha: oficial.tipo_marcha, tipo_campeonato: oficial.tipo_campeonato,
+        secao: 'Marcha', campo: 'pontuacao_andamento',
+        valorOficialLabel: normalizadoOficial?.label ?? oficial.pontuacao_andamento,
+        valorPdfLabel: normalizadoPdf.label, valorPdfGravar: String(normalizadoPdf.ordem),
+      })
+    }
+  }
+
+  return divergencias.sort((a, b) =>
+    a.categoria.localeCompare(b.categoria) || a.tipo_marcha.localeCompare(b.tipo_marcha) || (parseInt(a.num_catalogo, 10) || 0) - (parseInt(b.num_catalogo, 10) || 0)
+  )
+}
+
 // Cadastro manual de resultado (enquanto a ABCCMM ainda nao publicou o
 // oficial daquela categoria), no mesmo formato de tabela da pagina Final da
 // ABCCMM - toda a categoria de uma vez, pra digitar tabulando entre campos
@@ -912,6 +992,12 @@ function ResultadoManualPanel({ token }: { token: string }) {
   const [resumoEntradas, setResumoEntradas] = useState<EntradaResumoParcial[] | null>(null)
   const [resumoNomeArquivo, setResumoNomeArquivo] = useState('')
   const [busca, setBusca] = useState('')
+  // Ferramenta de divergencias: compara o oficial ja sincronizado contra o
+  // Resumo Parcial (ja carregado acima) - independente da categoria
+  // selecionada no combo, cobre o PDF inteiro de uma vez.
+  const [divergencias, setDivergencias] = useState<Divergencia[] | null>(null)
+  const [divergenciasLoading, setDivergenciasLoading] = useState(false)
+  const [corrigindo, setCorrigindo] = useState<string | null>(null)
   // Quando o PDF acha a categoria certa sozinho, a gente monta e mescla as
   // linhas na mao e muda selectedId so pra atualizar o combo - sem essa
   // trava, o efeito abaixo (que reage a mudanca de selectedId) recarregaria
@@ -1021,6 +1107,47 @@ function ResultadoManualPanel({ token }: { token: string }) {
     setResumoMsg(aplicados > 0
       ? `${aplicados} resultado(s) encontrado(s) no Resumo Parcial para essa categoria - revise e clique em Salvar Todos.`
       : 'Nenhum resultado encontrado no Resumo Parcial para essa categoria ainda.')
+  }
+
+  async function verDivergencias() {
+    if (!resumoEntradas) return
+    setDivergenciasLoading(true)
+    const res = await fetch('/api/admin/resultados-manual/oficiais', { headers: { 'Authorization': `Bearer ${token}` } })
+    const data = await res.json()
+    setDivergenciasLoading(false)
+    if (!res.ok) { setResumoMsg(`Erro ao buscar oficiais: ${data.error || 'tente novamente'}`); return }
+    setDivergencias(calcularDivergencias(resumoEntradas, data.oficiais || []))
+  }
+
+  function chaveDivergencia(d: Divergencia) {
+    return `${d.tipo_campeonato}|${d.tipo_marcha}|${d.categoria}|${d.num_catalogo}|${d.campo}`
+  }
+
+  // "Manter Oficial" so tira da lista (nao muda nada) - "Usar do PDF"
+  // sobrescreve o campo especifico, mantendo origem='abccmm' (continua
+  // oficial, so com o valor corrigido).
+  async function resolverDivergencia(d: Divergencia, usarPdf: boolean) {
+    const chave = chaveDivergencia(d)
+    if (usarPdf) {
+      setCorrigindo(chave)
+      const res = await fetch('/api/admin/resultados-manual/corrigir', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipo_campeonato: d.tipo_campeonato, tipo_marcha: d.tipo_marcha, categoria: d.categoria,
+          num_catalogo: d.num_catalogo, campo: d.campo, valor: d.valorPdfGravar,
+        }),
+      })
+      setCorrigindo(null)
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setResumoMsg(`Erro ao corrigir: ${data?.error || 'tente novamente'}`)
+        return
+      }
+      loadDados()
+      carregarListaCampeonatos()
+    }
+    setDivergencias(prev => (prev || []).filter(x => chaveDivergencia(x) !== chave))
   }
 
   async function salvarTudo() {
@@ -1185,8 +1312,61 @@ function ResultadoManualPanel({ token }: { token: string }) {
             Buscar no Resumo Parcial
           </button>
         )}
+        {resumoEntradas && (
+          <button onClick={verDivergencias} disabled={divergenciasLoading} className="px-3 py-2 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg text-xs font-semibold disabled:opacity-50">
+            {divergenciasLoading ? 'Comparando...' : 'Ver Divergências (Oficial × Resumo Parcial)'}
+          </button>
+        )}
       </div>
       {resumoMsg && <p className="text-xs text-[var(--accent)]">{resumoMsg}</p>}
+
+      {divergencias && (
+        <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold">
+              Divergências <span className="text-[var(--text-muted)] font-normal">({divergencias.length})</span>
+            </p>
+            <button onClick={() => setDivergencias(null)} className="text-[10px] text-[var(--text-muted)]">Fechar</button>
+          </div>
+          {divergencias.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)]">Nenhuma divergência encontrada - o oficial já cadastrado bate com o Resumo Parcial em todos os casos comparáveis.</p>
+          ) : (
+            <div className="max-h-96 overflow-y-auto space-y-2">
+              {divergencias.map(d => {
+                const chave = chaveDivergencia(d)
+                return (
+                  <div key={chave} className="border border-[var(--border)] rounded-lg p-2 space-y-1.5">
+                    <p className="text-xs font-semibold">
+                      {d.num_catalogo} - {d.nome_animal}
+                      <span className="text-[var(--text-muted)] font-normal"> · {d.categoria} ({d.tipo_marcha}) · {d.secao}</span>
+                    </p>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="text-[var(--text-muted)]">Oficial: <span className="font-semibold text-[var(--text-primary)]">{d.valorOficialLabel}</span></span>
+                      <span className="text-[var(--text-muted)]">Resumo Parcial: <span className="font-semibold text-[var(--text-primary)]">{d.valorPdfLabel}</span></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => resolverDivergencia(d, false)}
+                        disabled={corrigindo === chave}
+                        className="px-2 py-1 bg-[var(--bg-primary)] border border-[var(--border)] rounded text-[10px] font-semibold disabled:opacity-50"
+                      >
+                        Manter Oficial
+                      </button>
+                      <button
+                        onClick={() => resolverDivergencia(d, true)}
+                        disabled={corrigindo === chave}
+                        className="px-2 py-1 bg-[var(--accent)] text-white rounded text-[10px] font-semibold disabled:opacity-50"
+                      >
+                        {corrigindo === chave ? 'Aplicando...' : 'Usar do Resumo Parcial'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <input
         type="text"
