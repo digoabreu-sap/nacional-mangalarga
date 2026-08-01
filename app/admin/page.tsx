@@ -1085,8 +1085,13 @@ function ResultadoManualPanel({ token }: { token: string }) {
               <button
                 key={p.id}
                 onClick={() => { setSelectedId(String(p.id)); setBusca(''); setPdfParseado(null); setPdfMsg('') }}
+                title={p.registrados === 0 ? 'Nenhum lancamento ainda (nem manual, nem oficial)' : undefined}
                 className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-left text-xs transition-colors ${
-                  String(p.id) === selectedId ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'hover:bg-[var(--bg-card-hover)]'
+                  String(p.id) === selectedId
+                    ? 'bg-[var(--accent)]/10 text-[var(--accent)]'
+                    : p.registrados === 0
+                      ? 'bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20'
+                      : 'hover:bg-[var(--bg-card-hover)]'
                 }`}
               >
                 <span className="truncate">{nomeExibicaoCampeonato(p)}</span>

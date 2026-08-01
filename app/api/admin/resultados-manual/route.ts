@@ -43,11 +43,21 @@ export async function GET(req: NextRequest) {
   if (!tipo_campeonato || !tipo_marcha || !categoria) {
     const [{ data: campeonatos }, { data: resultados }, { data: composicaoEspeciais }] = await Promise.all([
       supabase.from('nm_campeonatos').select('*').order('categoria'),
-      supabase.from('nm_resultados').select('tipo_campeonato, tipo_marcha, categoria, colocacao, origem').eq('tipo_prova', 'final'),
+      supabase.from('nm_resultados').select('tipo_campeonato, tipo_marcha, categoria, colocacao, pontuacao_andamento, origem').eq('tipo_prova', 'final'),
       supabase.from('nm_campeoes_dos_campeoes').select('tipo, tipo_marcha, num_catalogo'),
     ])
     const especiais = campeonatosEspeciais()
-    const todosCampeonatos = [...(campeonatos || []), ...especiais]
+    // "Exclusivamente Marcha" no catalogo NAO e uma categoria propria - e so
+    // uma marcacao de que aqueles animais disputam so o quesito Marcha
+    // dentro da categoria em que ja estao (ex: 2 animais de "Égua Sênior"
+    // que nao fazem Morfologia/Funcional). O resultado de verdade deles
+    // nunca chega com esse tipo_campeonato exato (a ABCCMM sincroniza sob o
+    // tipo real da categoria - "Convencional" quando e um subconjunto misto,
+    // ou um tipo proprio tipo "Castrado" quando a categoria inteira e assim)
+    // - entao essas linhas nunca saem da lista de pendentes e so confundem.
+    // Nao aparecem mais aqui; cadastre pela categoria de origem do animal.
+    const campeonatosReais = (campeonatos || []).filter(c => c.tipo_campeonato !== 'Exclusivamente Marcha')
+    const todosCampeonatos = [...campeonatosReais, ...especiais]
 
     // Quantos animais cada Grande Campeonato/Campeao dos Campeoes tem hoje
     // (montado na aba Campeoes) - usado so pro contador "registrados/total"
@@ -64,11 +74,14 @@ export async function GET(req: NextRequest) {
     // cadastradas na mao ate agora. Assim que a sincronizacao trouxer
     // qualquer oficial pra ela, some da lista (a sincronizacao automatica
     // toma conta do resto sozinha, nao precisa mais de acompanhamento manual).
+    // "Registrado" conta colocacao OU pontuacao_andamento - em categorias
+    // sem quesito Categoria combinado (Castrado e afins), a nota de Marcha
+    // JA e a classificacao final, colocacao fica sempre vazia por design.
     const registrados = new Map<string, number>()
     const temOficial = new Set<string>()
     for (const r of resultados || []) {
       const key = `${r.tipo_campeonato}|${r.tipo_marcha}|${r.categoria}`
-      if (r.colocacao) registrados.set(key, (registrados.get(key) || 0) + 1)
+      if (r.colocacao || r.pontuacao_andamento) registrados.set(key, (registrados.get(key) || 0) + 1)
       if (r.origem === 'abccmm') temOficial.add(key)
     }
     const pendentes = todosCampeonatos
