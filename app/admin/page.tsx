@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { APP_VERSION, formatVersionComDataHora } from '@/lib/version'
 import { normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { StatusCor, TemaCoresConfig, DEFAULT_CORES, STATUS_LABEL, corEfetiva, hexParaRgba } from '@/lib/temaCores'
@@ -998,6 +998,31 @@ function ResultadoManualPanel({ token }: { token: string }) {
   const [divergencias, setDivergencias] = useState<Divergencia[] | null>(null)
   const [divergenciasLoading, setDivergenciasLoading] = useState(false)
   const [corrigindo, setCorrigindo] = useState<string | null>(null)
+  // Categoria(s) em pista agora (aba Categoria) - usado pra dar prioridade
+  // as divergencias de quem esta sendo julgado neste momento.
+  const [pistasAtivas, setPistasAtivas] = useState<Pista[]>([])
+  const [somenteEmPista, setSomenteEmPista] = useState(false)
+  useEffect(() => {
+    fetch('/api/admin/categoria-atual', { headers: { 'Authorization': `Bearer ${token}` } })
+      .then(res => res.json())
+      .then(data => setPistasAtivas(data.pistas || []))
+      .catch(() => {})
+  }, [token])
+  const chavesPistaAtiva = useMemo(
+    () => new Set(pistasAtivas.filter(p => p.categoria).map(p => `${normalizarTextoComparacao(p.categoria!)}|${p.tipo_marcha}`)),
+    [pistasAtivas]
+  )
+  function divergenciaEmPista(d: Divergencia) {
+    return chavesPistaAtiva.has(`${normalizarTextoComparacao(d.categoria)}|${d.tipo_marcha}`)
+  }
+  const divergenciasExibidas = useMemo(() => {
+    const base = divergencias || []
+    const filtradas = somenteEmPista ? base.filter(divergenciaEmPista) : base
+    // Em pista primeiro, mantendo a ordem alfabetica original dentro de
+    // cada grupo (Array.sort e estavel).
+    return [...filtradas].sort((a, b) => Number(divergenciaEmPista(b)) - Number(divergenciaEmPista(a)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [divergencias, somenteEmPista, chavesPistaAtiva])
   // Quando o PDF acha a categoria certa sozinho, a gente monta e mescla as
   // linhas na mao e muda selectedId so pra atualizar o combo - sem essa
   // trava, o efeito abaixo (que reage a mudanca de selectedId) recarregaria
@@ -1322,21 +1347,39 @@ function ResultadoManualPanel({ token }: { token: string }) {
 
       {divergencias && (
         <div className="bg-[var(--bg-card)] rounded-xl border border-[var(--border)] p-3 space-y-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <p className="text-xs font-semibold">
-              Divergências <span className="text-[var(--text-muted)] font-normal">({divergencias.length})</span>
+              Divergências <span className="text-[var(--text-muted)] font-normal">({divergenciasExibidas.length}{divergenciasExibidas.length !== divergencias.length ? ` de ${divergencias.length}` : ''})</span>
             </p>
-            <button onClick={() => setDivergencias(null)} className="text-[10px] text-[var(--text-muted)]">Fechar</button>
+            <div className="flex items-center gap-3">
+              {chavesPistaAtiva.size > 0 && (
+                <label className="flex items-center gap-1.5 text-[10px] text-[var(--text-secondary)]">
+                  <input type="checkbox" checked={somenteEmPista} onChange={e => setSomenteEmPista(e.target.checked)} />
+                  Só da categoria em pista
+                </label>
+              )}
+              <button onClick={() => setDivergencias(null)} className="text-[10px] text-[var(--text-muted)]">Fechar</button>
+            </div>
           </div>
-          {divergencias.length === 0 ? (
-            <p className="text-xs text-[var(--text-muted)]">Nenhuma divergência encontrada - o oficial já cadastrado bate com o Resumo Parcial em todos os casos comparáveis.</p>
+          {chavesPistaAtiva.size === 0 && (
+            <p className="text-[10px] text-[var(--text-muted)]">Nenhuma categoria em pista agora (configure na aba Categoria) - mostrando todas, sem prioridade.</p>
+          )}
+          {divergenciasExibidas.length === 0 ? (
+            <p className="text-xs text-[var(--text-muted)]">
+              {somenteEmPista ? 'Nenhuma divergência na categoria em pista agora.' : 'Nenhuma divergência encontrada - o oficial já cadastrado bate com o Resumo Parcial em todos os casos comparáveis.'}
+            </p>
           ) : (
             <div className="max-h-96 overflow-y-auto space-y-2">
-              {divergencias.map(d => {
+              {divergenciasExibidas.map(d => {
                 const chave = chaveDivergencia(d)
+                const emPista = divergenciaEmPista(d)
                 return (
-                  <div key={chave} className="border border-[var(--border)] rounded-lg p-2 space-y-1.5">
+                  <div
+                    key={chave}
+                    className={`border rounded-lg p-2 space-y-1.5 ${emPista ? 'border-[var(--accent)]/50 bg-[var(--accent)]/5' : 'border-[var(--border)]'}`}
+                  >
                     <p className="text-xs font-semibold">
+                      {emPista && <span className="text-[var(--accent)] mr-1" title="Categoria em pista agora">●</span>}
                       {d.num_catalogo} - {d.nome_animal}
                       <span className="text-[var(--text-muted)] font-normal"> · {d.categoria} ({d.tipo_marcha}) · {d.secao}</span>
                     </p>
