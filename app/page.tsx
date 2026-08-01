@@ -13,7 +13,7 @@ import { trackAnimalClick, trackWhatsappClick } from '@/components/Analytics'
 import { formatColocacaoOficial, formatColocacaoMarcha, normalizarColocacao, normalizarColocacaoPorRank } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
 import { tipoDaCategoriaEspecial } from '@/lib/campeoesDosCampeoes'
-import { separarResultadoPrincipal, formatClassificacaoExtra, formatTituloExtra, type ResultadoComContexto } from '@/lib/resultadosAnimal'
+import { separarResultadoPrincipal, formatClassificacaoExtra, formatTituloExtra, ehCampeonatoCastrado, labelColocacao, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 import { TemaCoresConfig, StatusCor, corEfetiva, estiloTag } from '@/lib/temaCores'
 
 const MARCHAS = [
@@ -1483,7 +1483,7 @@ function HomeContent() {
                         formatColocacaoMarcha(resultado.pontuacao_andamento)
                       ) : podeEditarLocal && posicaoSimulada != null ? (
                         <span className="text-red-600 dark:text-red-400 font-semibold">{formatColocacaoMarcha(String(posicaoSimulada))}</span>
-                      ) : '—'} · Classificação:{' '}
+                      ) : '—'} · {labelColocacao(animal.tipo_campeonato, animal.categoria)}:{' '}
                       {resultado?.colocacao ? (
                         formatColocacaoOficial(resultado.colocacao)
                       ) : podeEditarLocal && classificacaoSimulada ? (
@@ -1499,7 +1499,11 @@ function HomeContent() {
                   {animal.num_catalogo && resultadosExtrasPorCatalogo[animal.num_catalogo]?.map((extra, i) => (
                     <p key={i} className="text-xs text-[var(--accent)] mt-1 font-medium flex items-center gap-1">
                       <span>🏆</span>
-                      <span>{formatTituloExtra(extra)}: {formatClassificacaoExtra(extra)}</span>
+                      {ehCampeonatoCastrado(extra.tipo_campeonato, extra.categoria) ? (
+                        <span>{formatTituloExtra(extra)} — Marcha: {formatColocacaoMarcha(extra.pontuacao_andamento)} · Marchador Ideal: {extra.colocacao ? formatColocacaoOficial(extra.colocacao) : '—'}</span>
+                      ) : (
+                        <span>{formatTituloExtra(extra)}: {formatClassificacaoExtra(extra)}</span>
+                      )}
                     </p>
                   ))}
                 </div>

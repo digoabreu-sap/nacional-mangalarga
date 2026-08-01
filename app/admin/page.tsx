@@ -1068,12 +1068,16 @@ function ResultadoManualPanel({ token }: { token: string }) {
   async function desbloquear(numCatalogo: string) {
     if (!campeonato) return
     setDesbloqueando(numCatalogo)
-    await fetch('/api/admin/resultados-manual/desbloquear', {
+    const res = await fetch('/api/admin/resultados-manual/desbloquear', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ tipo_campeonato: campeonato.tipo_campeonato, tipo_marcha: campeonato.tipo_marcha, categoria: campeonato.categoria, num_catalogo: numCatalogo }),
     })
     setDesbloqueando(null)
+    if (!res.ok) {
+      const data = await res.json().catch(() => null)
+      setMsg(`Erro ao destravar: ${data?.error || 'tente novamente'}`)
+    }
     loadDados()
   }
 
@@ -1097,6 +1101,9 @@ function ResultadoManualPanel({ token }: { token: string }) {
       const data = await res.json()
       setMsg(`${data.desbloqueados} resultado(s) destravado(s) - agora pode editar ou importar PDF/Resumo Parcial.`)
       setTimeout(() => setMsg(''), 6000)
+    } else {
+      const data = await res.json().catch(() => null)
+      setMsg(`Erro ao destravar: ${data?.error || 'tente novamente'}`)
     }
     loadDados()
   }

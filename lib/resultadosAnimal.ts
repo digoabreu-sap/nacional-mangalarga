@@ -1,4 +1,5 @@
 import { formatColocacaoOficial, formatColocacaoMarcha } from './colocacao'
+import { tipoDaCategoriaEspecial } from './campeoesDosCampeoes'
 
 // Separa as linhas de nm_resultados de um animal (identificado por
 // num_catalogo) entre o resultado da SUA categoria de origem (o "principal",
@@ -55,4 +56,18 @@ export function formatClassificacaoExtra(l: ResultadoComContexto): string {
 // selo mais verboso: "Grande Campeonato · Campeão dos Campeões Castrado").
 export function formatTituloExtra(l: ResultadoComContexto): string {
   return l.categoria
+}
+
+// Castrado (e o Campeao dos Campeoes Castrado) nao disputa Categoria
+// combinada de verdade - o premio que ocupa essa mesma coluna/campo
+// (colocacao) e o "Marchador Ideal" (soma Funcional + Marcha), um premio
+// proprio e diferente do quesito Categoria das demais categorias. So muda
+// o ROTULO exibido pro usuario - o dado em si continua vindo do mesmo
+// campo colocacao, sem mudanca de schema.
+export function ehCampeonatoCastrado(tipoCampeonato: string | null | undefined, categoria: string | null | undefined): boolean {
+  return tipoCampeonato === 'Castrado' || tipoDaCategoriaEspecial(categoria ?? '') === 'castrado'
+}
+
+export function labelColocacao(tipoCampeonato: string | null | undefined, categoria: string | null | undefined): string {
+  return ehCampeonatoCastrado(tipoCampeonato, categoria) ? 'Marchador Ideal' : 'Categoria'
 }

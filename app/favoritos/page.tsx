@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { supabase, Animal } from '@/lib/supabase'
 import Link from 'next/link'
 import BottomNav from '@/components/BottomNav'
-import { formatColocacaoOficial } from '@/lib/colocacao'
-import { separarResultadoPrincipal, formatClassificacaoExtra, formatTituloExtra, type ResultadoComContexto } from '@/lib/resultadosAnimal'
+import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
+import { separarResultadoPrincipal, formatClassificacaoExtra, formatTituloExtra, ehCampeonatoCastrado, labelColocacao, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 
 type ResultadoResumo = { colocacao: string | null; pontuacao_funcional: string | null; pontuacao_morfologia: string | null; pontuacao_andamento: string | null }
 
@@ -109,13 +109,17 @@ export default function Favoritos() {
                     <p className="text-sm text-[var(--text-secondary)] mt-0.5">{animal.categoria}</p>
                     {resultado && (
                       <p className="text-xs text-[var(--text-muted)] mt-1">
-                        Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · Classificação: {formatColocacaoOficial(resultado.colocacao)}
+                        Morfologia: {resultado.pontuacao_morfologia ?? '—'} · Funcional: {resultado.pontuacao_funcional ?? '—'} · Marcha: {resultado.pontuacao_andamento ?? '—'} · {labelColocacao(animal.tipo_campeonato, animal.categoria)}: {formatColocacaoOficial(resultado.colocacao)}
                       </p>
                     )}
                     {animal.num_catalogo && resultadosExtrasPorCatalogo[animal.num_catalogo]?.map((extra, i) => (
                       <p key={i} className="text-xs text-[var(--accent)] mt-0.5 font-medium flex items-center gap-1">
                         <span>🏆</span>
-                        <span>{formatTituloExtra(extra)}: {formatClassificacaoExtra(extra)}</span>
+                        {ehCampeonatoCastrado(extra.tipo_campeonato, extra.categoria) ? (
+                          <span>{formatTituloExtra(extra)} — Marcha: {formatColocacaoMarcha(extra.pontuacao_andamento)} · Marchador Ideal: {extra.colocacao ? formatColocacaoOficial(extra.colocacao) : '—'}</span>
+                        ) : (
+                          <span>{formatTituloExtra(extra)}: {formatClassificacaoExtra(extra)}</span>
+                        )}
                       </p>
                     ))}
                   </div>

@@ -10,7 +10,7 @@ import VotingPanel from '@/components/VotingPanel'
 import { getAnimalSchedule, isToday, isPast } from '@/lib/calendario'
 import { formatColocacaoOficial, formatColocacaoMarcha } from '@/lib/colocacao'
 import { getCategoriasMistas, ehExcecaoMarcha } from '@/lib/campeonatoMisto'
-import { separarResultadoPrincipal, formatTituloExtra, type ResultadoComContexto } from '@/lib/resultadosAnimal'
+import { separarResultadoPrincipal, formatTituloExtra, labelColocacao, type ResultadoComContexto } from '@/lib/resultadosAnimal'
 
 function InfoRow({ label, value }: { label: string; value: string | null | undefined }) {
   if (!value) return null
@@ -59,8 +59,11 @@ type ResultadoAnimal = {
 // Mesmo formato do resultado oficial da ABCCMM, com um destaque pra
 // colocacao geral da categoria e outro pra colocacao na marcha - sao
 // classificacoes independentes (um animal pode ser Campeao nas duas, so em
-// uma, ou em nenhuma), entao cada uma ganha seu proprio realce.
-function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) {
+// uma, ou em nenhuma), entao cada uma ganha seu proprio realce. Castrado
+// nao disputa Categoria combinada - o premio que ocupa esse mesmo campo
+// (colocacao) e o "Marchador Ideal" (soma Funcional + Marcha), por isso o
+// rotulo muda (label ja vem pronto do labelColocacao()).
+function ResultadoSection({ resultado, label }: { resultado: ResultadoAnimal | null; label: string }) {
   if (!resultado) {
     return <p className="text-xs text-[var(--text-muted)] text-center py-2">Ainda nao julgado</p>
   }
@@ -71,7 +74,7 @@ function ResultadoSection({ resultado }: { resultado: ResultadoAnimal | null }) 
       )}
       <div className="grid grid-cols-2 divide-x divide-[var(--border)] text-center">
         <div>
-          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Categoria</p>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">{label}</p>
           <p className="text-xl font-bold">{formatColocacaoOficial(resultado.colocacao)}</p>
         </div>
         <div>
@@ -108,7 +111,7 @@ function ResultadoExtraCard({ resultado }: { resultado: ResultadoComContexto }) 
       )}
       <div className="grid grid-cols-2 divide-x divide-[var(--border)] text-center">
         <div>
-          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Categoria</p>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">{labelColocacao(resultado.tipo_campeonato, resultado.categoria)}</p>
           <p className="text-xl font-bold">{formatColocacaoOficial(resultado.colocacao)}</p>
         </div>
         <div>
@@ -336,7 +339,7 @@ export default function AnimalDetail({ params }: { params: Promise<{ id: string 
             <h3 className="text-xs font-semibold text-[var(--accent)] uppercase tracking-wide">Resultado</h3>
             <Link href="/resultados" className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">Ver categoria completa</Link>
           </div>
-          <ResultadoSection resultado={resultado} />
+          <ResultadoSection resultado={resultado} label={labelColocacao(animal.tipo_campeonato, animal.categoria)} />
         </div>
 
         {resultadosExtras.map((extra, i) => (
