@@ -1536,40 +1536,77 @@ function ResultadoManualPanel({ token }: { token: string }) {
   )
 }
 
+// Data local (nao UTC) no formato YYYY-MM-DD, pra usar em <input type="date">
+// e bater com o dia civil de Brasilia que o backend agrupa.
+function dataLocalISO(d: Date): string {
+  const ano = d.getFullYear()
+  const mes = String(d.getMonth() + 1).padStart(2, '0')
+  const dia = String(d.getDate()).padStart(2, '0')
+  return `${ano}-${mes}-${dia}`
+}
+
 function AnalyticsPanel({ token }: { token: string }) {
   const [topAnimals, setTopAnimals] = useState<TopAnimal[]>([])
   const [dailyViews, setDailyViews] = useState<DailyView[]>([])
-  const [totalViews, setTotalViews] = useState(0)
   const [totalClicks, setTotalClicks] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadingViews, setLoadingViews] = useState(false)
+  // Vazio = sem limite naquela ponta (os dois vazios = historico completo).
+  const [inicio, setInicio] = useState('')
+  const [fim, setFim] = useState('')
+
+  const loadDailyViews = useCallback(async (dtInicio: string, dtFim: string) => {
+    setLoadingViews(true)
+    const headers = { 'Authorization': `Bearer ${token}` }
+    const params = new URLSearchParams({ type: 'daily_views' })
+    if (dtInicio) params.set('inicio', dtInicio)
+    if (dtFim) params.set('fim', dtFim)
+    const res = await fetch(`/api/admin/stats?${params.toString()}`, { headers })
+    setDailyViews(await res.json())
+    setLoadingViews(false)
+  }, [token])
 
   useEffect(() => {
     async function load() {
       const headers = { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-      const [topRes, viewsRes, totalVRes, totalCRes] = await Promise.all([
+      const [topRes, viewsRes, totalCRes] = await Promise.all([
         fetch('/api/admin/stats?type=top_animals', { headers }),
         fetch('/api/admin/stats?type=daily_views', { headers }),
-        fetch('/api/admin/stats?type=total_views', { headers }),
         fetch('/api/admin/stats?type=total_clicks', { headers }),
       ])
-      const [top, views, tv, tc] = await Promise.all([topRes.json(), viewsRes.json(), totalVRes.json(), totalCRes.json()])
+      const [top, views, tc] = await Promise.all([topRes.json(), viewsRes.json(), totalCRes.json()])
       setTopAnimals(top)
       setDailyViews(views)
-      setTotalViews(tv.total || 0)
       setTotalClicks(tc.total || 0)
       setLoading(false)
     }
     load()
   }, [token])
 
+  function aplicarPreset(dias: number | null) {
+    if (dias == null) { setInicio(''); setFim(''); loadDailyViews('', ''); return }
+    const hoje = new Date()
+    const de = new Date(hoje)
+    de.setDate(de.getDate() - (dias - 1))
+    const novoInicio = dataLocalISO(de)
+    const novoFim = dataLocalISO(hoje)
+    setInicio(novoInicio)
+    setFim(novoFim)
+    loadDailyViews(novoInicio, novoFim)
+  }
+
+  const totalViewsPeriodo = dailyViews.reduce((soma, d) => soma + d.total, 0)
+
   if (loading) return <div className="text-center py-8"><div className="w-6 h-6 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mx-auto" /></div>
+
+  const presetAtivo = !inicio && !fim ? 'tudo' : null
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
-          <p className="text-[10px] text-[var(--text-muted)] uppercase">Page Views (7d)</p>
-          <p className="text-2xl font-bold text-[var(--accent)]">{totalViews.toLocaleString()}</p>
+          <p className="text-[10px] text-[var(--text-muted)] uppercase">Page Views {presetAtivo === 'tudo' ? '(total)' : '(periodo)'}</p>
+          <p className="text-2xl font-bold text-[var(--accent)]">{totalViewsPeriodo.toLocaleString()}</p>
         </div>
         <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
           <p className="text-[10px] text-[var(--text-muted)] uppercase">Cliques Animais</p>
@@ -1577,12 +1614,63 @@ function AnalyticsPanel({ token }: { token: string }) {
         </div>
       </div>
 
-      {dailyViews.length > 0 && (
-        <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
-          <h3 className="text-xs font-semibold text-[var(--accent)] uppercase mb-3">Visitas Diarias</h3>
-          <DailyViewsChart dados={dailyViews} />
+      <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)] space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <h3 className="text-xs font-semibold text-[var(--accent)] uppercase">Visitas Diarias</h3>
+          <div className="flex gap-1.5">
+            {[
+              { label: '7d', dias: 7 },
+              { label: '30d', dias: 30 },
+              { label: '90d', dias: 90 },
+              { label: 'Tudo', dias: null },
+            ].map(p => (
+              <button
+                key={p.label}
+                onClick={() => aplicarPreset(p.dias)}
+                className={`text-[10px] px-2 py-1 rounded-md font-semibold ${(p.dias === null) === (presetAtivo === 'tudo') ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-primary)] border border-[var(--border)] text-[var(--text-secondary)]'}`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            De
+            <input
+              type="date"
+              value={inicio}
+              max={fim || undefined}
+              onChange={e => setInicio(e.target.value)}
+              className="py-1 px-2 bg-[var(--bg-primary)] border border-[var(--border)] rounded-md text-xs text-[var(--text-primary)]"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+            Ate
+            <input
+              type="date"
+              value={fim}
+              min={inicio || undefined}
+              onChange={e => setFim(e.target.value)}
+              className="py-1 px-2 bg-[var(--bg-primary)] border border-[var(--border)] rounded-md text-xs text-[var(--text-primary)]"
+            />
+          </label>
+          <button
+            onClick={() => loadDailyViews(inicio, fim)}
+            disabled={loadingViews}
+            className="px-3 py-1.5 bg-[var(--accent)] text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+          >
+            {loadingViews ? 'Carregando...' : 'Aplicar'}
+          </button>
+        </div>
+
+        {dailyViews.length > 0 ? (
+          <DailyViewsChart dados={dailyViews} />
+        ) : (
+          !loadingViews && <p className="text-sm text-[var(--text-muted)]">Sem dados de visitas no periodo selecionado</p>
+        )}
+      </div>
 
       <div className="bg-[var(--bg-card)] rounded-xl p-4 border border-[var(--border)]">
         <h3 className="text-xs font-semibold text-[var(--accent)] uppercase mb-3">Top 20 Animais Mais Clicados</h3>

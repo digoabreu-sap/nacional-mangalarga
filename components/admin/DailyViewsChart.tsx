@@ -50,6 +50,12 @@ export default function DailyViewsChart({ dados }: { dados: Ponto[] }) {
     return `${d}/${m}`
   }
 
+  // Com historico completo (meses de dados) um rotulo por dia fica
+  // ilegivel/sobreposto - mostra so uma amostra espacada do eixo X (mantendo
+  // todos os pontos/linha, so os textos sao reduzidos).
+  const maxRotulos = 12
+  const passoRotulo = Math.max(1, Math.ceil(dados.length / maxRotulos))
+
   return (
     <div className="relative">
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} className="w-full h-auto" role="img" aria-label="Visitas diárias">
@@ -77,9 +83,11 @@ export default function DailyViewsChart({ dados }: { dados: Ponto[] }) {
         {dados.map((d, i) => (
           <g key={i}>
             <circle cx={x(i)} cy={y(d.total)} r={hoverIdx === i ? 5 : 4} fill={ACCENT} stroke="var(--bg-card)" strokeWidth={2} />
-            <text x={x(i)} y={HEIGHT - 8} textAnchor="middle" className="fill-[var(--text-muted)]" style={{ fontSize: 9 }}>
-              {formatDia(d.dia)}
-            </text>
+            {(i % passoRotulo === 0 || i === dados.length - 1) && (
+              <text x={x(i)} y={HEIGHT - 8} textAnchor="middle" className="fill-[var(--text-muted)]" style={{ fontSize: 9 }}>
+                {formatDia(d.dia)}
+              </text>
+            )}
             {/* alvo de hover maior que o ponto visivel */}
             <rect
               x={x(i) - stepX / 2} y={PAD_TOP} width={stepX || plotW} height={plotH}

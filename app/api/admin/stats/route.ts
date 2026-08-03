@@ -16,7 +16,12 @@ export async function GET(req: NextRequest) {
   }
 
   if (type === 'daily_views') {
-    const { data } = await supabase.rpc('nm_daily_views', { days: 7 })
+    // inicio/fim (YYYY-MM-DD) opcionais - sem eles retorna o historico
+    // completo (desde o primeiro registro ate hoje), pra permitir tanto ver
+    // tudo quanto escolher um intervalo especifico no admin.
+    const inicio = req.nextUrl.searchParams.get('inicio') || null
+    const fim = req.nextUrl.searchParams.get('fim') || null
+    const { data } = await supabase.rpc('nm_daily_views_range', { data_inicio: inicio, data_fim: fim })
     return NextResponse.json(data || [])
   }
 
