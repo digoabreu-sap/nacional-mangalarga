@@ -20,6 +20,27 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js'
 // R$, depois o rotulo de Classificação, depois "NUM - Nome - Registro",
 // depois Expositor/Criador. Por isso o rotulo de cada animal fica sempre
 // exatamente 1 linha ANTES da linha "NUM - Nome - Registro" (nunca depois).
+//
+// O titulo de cada secao (ex: "Cavalo Adulto - Categoria") vem sempre
+// IMEDIATAMENTE depois da linha de cabecalho de coluna fixa
+// "ClassificaçãoExp. não criadorExp. CriadorExpositorAnimal" - confirmado
+// contra o PDF real (355 secoes, todas com essa mesma linha logo antes do
+// titulo). Usamos ela como ancora confiavel em vez de tentar casar
+// RE_SECAO em qualquer linha solta: title compostos como "Cavalo Castrado
+// Máster - Prova Funcional - Marcha Castrado" ou "Raça Adulto - Fêmea -
+// Campeão(a) da Raça" (Grande Campeonato/Marchador Ideal - 38 dos 355
+// titulos no PDF de teste) NAO batem no formato simples "Categoria -
+// Quesito" e ficavam sem reconhecer - sem a ancora, o codigo simplesmente
+// mantinha categoria/secao com o valor da secao ANTERIOR, e os animais
+// dali pra frente ficavam silenciosamente atribuidos ao quesito errado
+// (ex: nota de Prova Funcional gravada como se fosse Marcha) ate a
+// proxima secao reconhecida - causando divergencias falsas na comparacao
+// com o oficial. Agora, ao achar a ancora, sempre INVALIDA
+// categoria/secao primeiro; so re-preenche se o titulo seguinte bater no
+// formato conhecido - uma secao com titulo nao reconhecido fica
+// corretamente IGNORADA (nenhum animal dela entra na lista) em vez de
+// contaminar a secao seguinte.
+const RE_ANCORA_SECAO = /^Classificação\s*Exp\.\s*não criador\s*Exp\.\s*Criador\s*Expositor\s*Animal\s*$/
 
 export type SecaoResumoParcial = 'Categoria' | 'Marcha' | 'Prova Funcional'
 
@@ -53,12 +74,11 @@ export async function parseResumoParcialPdf(buffer: Buffer): Promise<EntradaResu
     const mTipo = linha.match(RE_TIPO)
     if (mTipo) { tipoCampeonato = mTipo[1]; tipoMarcha = mTipo[2] as 'MB' | 'MP'; continue }
 
-    // So tenta casar cabecalho de secao em linhas que nao comecem com
-    // digito - evita falso positivo com a linha de animal ("15 - Nome -
-    // Registro"), que tambem tem " - " no meio.
-    if (!/^\s*\d/.test(linha)) {
-      const mSecao = linha.match(RE_SECAO)
-      if (mSecao) { categoria = mSecao[1].trim(); secao = mSecao[2] as SecaoResumoParcial; continue }
+    if (RE_ANCORA_SECAO.test(linha)) {
+      const mSecao = (linhas[i + 1] || '').match(RE_SECAO)
+      if (mSecao) { categoria = mSecao[1].trim(); secao = mSecao[2] as SecaoResumoParcial }
+      else { categoria = null; secao = null }
+      continue
     }
 
     const mCatalogo = linha.match(RE_CATALOGO)
